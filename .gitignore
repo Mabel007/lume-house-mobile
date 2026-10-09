@@ -17,6 +17,23 @@ expo-env.d.ts
 *.p12
 *.key
 *.mobileprovision
+*.keystore
+*.keystore.*
+*.jks.*
+*.der
+credentials.json
+credentials.*.json
+google-services.json
+GoogleService-Info.plist
+
+# Release binaries and private demonstration recordings
+*.apk
+*.aab
+*.apks
+*.mp4
+*.mov
+*.mkv
+*.webm
 
 # Metro
 .metro-health-check*
