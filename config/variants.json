@@ -1,0 +1,17 @@
+{
+  "development": {
+    "name": "Lumé House Dev",
+    "androidPackage": "com.najbuilds.lumehouse.dev",
+    "scheme": "lumehousemobile-dev"
+  },
+  "staging": {
+    "name": "Lumé House Staging",
+    "androidPackage": "com.najbuilds.lumehouse.staging",
+    "scheme": "lumehousemobile-staging"
+  },
+  "production": {
+    "name": "Lumé House",
+    "androidPackage": "com.najbuilds.lumehouse",
+    "scheme": "lumehousemobile"
+  }
+}
