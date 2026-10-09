@@ -25,7 +25,7 @@ export function ProductCard({ product, details = false }: { product: Product; de
   async function add() {
     setConfirmation(null);
     if (!available || !variant || busy || limitReached) return;
-    if (!bag.signedIn) { router.push('/account'); return; }
+    if (!bag.signedIn) { router.navigate('/account'); return; }
     if (await bag.dispatch({ type: 'add', variantId: variant.id })) setConfirmation('Added to your Bag.');
   }
   const information = <>
@@ -64,7 +64,7 @@ export function ProductCard({ product, details = false }: { product: Product; de
       <ActionButton label={limitReached ? 'Quantity limit reached' : !variant ? optionsRequired ? 'Choose a selection' : 'Unavailable' :
         !available ? 'Unavailable' : bag.signedIn ? 'Add to Bag' : 'Sign in to add'}
         accessibilityLabel={`Add ${product.name}${variant ? `, ${variantLabel(variant) || 'standard selection'}` : ''} to Bag`}
-        disabled={!available || busy || limitReached} onPress={() => { void add(); }} />
+        busy={busy} disabled={!available || busy || limitReached} onPress={() => { void add(); }} />
       {product.variants === undefined ? <Text style={styles.category}>Selections are unavailable. Refresh the catalogue to try again.</Text> : null}
       {confirmation ? <Text accessibilityLiveRegion="polite" style={styles.optionText}>{confirmation}</Text> : null}
     </View>

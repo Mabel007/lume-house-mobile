@@ -11,7 +11,7 @@ export default function ProductDetailsScreen() {
   const { state, refresh } = useProducts();
   const product = state.status === 'ready' ? findRouteProduct(state.products, productId) : undefined;
   return <SafeAreaView style={styles.root}><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-    <ActionButton label="Back to collection" secondary onPress={() => { if (router.canGoBack()) router.back(); else router.replace('/'); }} />
+    <ActionButton label="Back" accessibilityLabel="Go back, or return to the collection" secondary onPress={() => { if (router.canGoBack()) router.back(); else router.replace('/'); }} />
     <View style={styles.links}>
       <Link href="/bag" asChild><Pressable accessibilityRole="link" style={styles.link}><Text style={styles.text}>Your Bag</Text></Pressable></Link>
       <Link href="/account" asChild><Pressable accessibilityRole="link" style={styles.link}><Text style={styles.text}>Your account</Text></Pressable></Link>

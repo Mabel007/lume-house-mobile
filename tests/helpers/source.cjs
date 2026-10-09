@@ -41,4 +41,4 @@ function find(element, predicate) {
     const result = find(child, predicate); if (result) return result;
   }
 }
-module.exports = { load, hooks, find };
+module.exports = { load, hooks, find, native };

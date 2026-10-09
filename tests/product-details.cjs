@@ -42,8 +42,8 @@ test('changing product changes keyed selection instance and deep-link back has a
   const second = { ...product, id: 'real-b' }; const view = details({ status: 'ready', products: [product, second] });
   assert.equal(find(view.render(), element => element.type === 'ProductCard').key, 'real-a');
   view.setId('real-b'); assert.equal(find(view.render(), element => element.type === 'ProductCard').key, 'real-b');
-  find(view.render(), element => element.props?.label === 'Back to collection').props.onPress(); assert.equal(view.navigation[0], '/');
-  view.setBack(true); find(view.render(), element => element.props?.label === 'Back to collection').props.onPress(); assert.equal(view.navigation[1], 'back');
+  find(view.render(), element => element.props?.label === 'Back').props.onPress(); assert.equal(view.navigation[0], '/');
+  view.setBack(true); find(view.render(), element => element.props?.label === 'Back').props.onPress(); assert.equal(view.navigation[1], 'back');
   assert.ok(find(view.render(), element => element.type === 'Link' && element.props.href === '/bag'));
   assert.ok(find(view.render(), element => element.type === 'Link' && element.props.href === '/account'));
 });

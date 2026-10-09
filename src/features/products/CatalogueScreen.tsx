@@ -57,7 +57,7 @@ const styles = StyleSheet.create({
   tagline: { fontSize: 14, color: '#665F52', marginTop: 6 }, title: { fontSize: 28, color: '#292820', marginTop: 36 },
   intro: { fontSize: 16, lineHeight: 24, color: '#665F52', marginTop: 10 }, status: { padding: 24, alignItems: 'center', gap: 18 },
   message: { fontSize: 16, lineHeight: 24, textAlign: 'center', color: '#423F38' },
-  links: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 24 }, link: { minHeight: 48, justifyContent: 'center' },
+  links: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 24, rowGap: 12 }, link: { minHeight: 48, justifyContent: 'center' },
   refresh: { marginTop: 18, alignSelf: 'flex-start' }, bagMessage: { marginTop: 12 },
   filters: { gap: 12, marginTop: 18 }, search: { minHeight: 48, borderWidth: 1, borderColor: '#A59C8B', borderRadius: 8, padding: 12, color: '#292820', fontSize: 16 },
   categories: { gap: 8 }, filter: { minHeight: 48, padding: 12, justifyContent: 'center', borderWidth: 1, borderColor: '#A59C8B', borderRadius: 8 },

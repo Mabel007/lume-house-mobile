@@ -61,17 +61,17 @@ export default function BagScreen() {
           <Link href="/account" asChild><Pressable accessibilityRole="link" style={styles.signIn}><Text style={styles.signInText}>Go to your account</Text></Pressable></Link>
         </> : <>
           <Text style={styles.text}>Saved to your account. Refresh to load changes from another device.</Text>
-          <ActionButton label="Refresh Bag" disabled={busy} onPress={() => { refreshCatalogue(); void refresh(); }} />
+          <ActionButton label="Refresh Bag" busy={busy} disabled={busy} onPress={() => { refreshCatalogue(); void refresh(); }} />
           <Link href="/account" asChild><Pressable accessibilityRole="link" style={styles.link}><Text style={styles.text}>Your account</Text></Pressable></Link>
-          {busy ? <View accessibilityLiveRegion="polite" style={styles.progress}><ActivityIndicator color="#535B40" />
+          {busy ? <View accessibilityLiveRegion="polite" style={styles.progress}><ActivityIndicator color="#535B40" accessibilityLabel={bag.state.status === 'saving' ? 'Saving your Bag' : 'Loading your Bag'} />
             <Text style={styles.text}>{bag.state.status === 'saving' ? 'Saving your Bag…' : 'Loading your Bag…'}</Text></View> : null}
           {bag.state.message ? <Text accessibilityRole="alert" style={styles.text}>{bag.state.message}</Text> : null}
-          {bag.state.canRetry ? <ActionButton label="Retry saved change" disabled={busy} secondary onPress={() => { void bag.retry(); }} /> : null}
+          {bag.state.canRetry ? <ActionButton label="Retry saved change" busy={busy} disabled={busy} secondary onPress={() => { void bag.retry(); }} /> : null}
           {catalogue.status === 'error' ? <><Text accessibilityRole="alert" style={styles.text}>Current prices and selections could not be loaded.</Text>
             <ActionButton label="Retry catalogue" secondary onPress={refreshCatalogue} /></> : null}
         </>}
       </View>}
-      ListEmptyComponent={signedIn && bag.state.status === 'ready' ? <Text style={styles.empty}>Your Bag is empty. Find something beautiful in the collection.</Text> : null}
+      ListEmptyComponent={signedIn && bag.state.status === 'ready' ? <Text accessibilityLiveRegion="polite" style={styles.empty}>Your Bag is empty. Find something beautiful in the collection.</Text> : null}
       ListFooterComponent={items.length ? <View style={styles.summary}>
         {completePrices ? <Text style={styles.name}>Subtotal {formatMoney(subtotal)}</Text> : <Text style={styles.text}>Subtotal is unavailable until current selections are available.</Text>}
         <Text style={styles.text}>Current prices are shown. Refresh after making changes on the web.</Text>
@@ -86,6 +86,6 @@ const styles = StyleSheet.create({
   line: { padding: 18, gap: 12, borderRadius: 12, backgroundColor: '#FFFDF8' },
   quantity: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, link: { minHeight: 48, justifyContent: 'center' },
   signIn: { minHeight: 48, borderRadius: 8, padding: 16, backgroundColor: '#535B40', alignItems: 'center' },
-  signInText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' }, progress: { flexDirection: 'row', gap: 12, alignItems: 'center' },
+  signInText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' }, progress: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'center' },
   empty: { fontSize: 17, lineHeight: 26, color: '#423F38', paddingVertical: 24 }, summary: { paddingVertical: 24, gap: 12 },
 });

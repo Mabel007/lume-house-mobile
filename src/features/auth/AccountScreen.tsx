@@ -6,14 +6,14 @@ import { useAuth } from './AuthContext';
 export default function AccountScreen() {
   const { state, busy, message, signIn, signOut } = useAuth();
   const loading = busy || state.status === 'restoring';
-  return <SafeAreaView style={styles.root}><ScrollView contentContainerStyle={styles.content}>
+  return <SafeAreaView style={styles.root}><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
     <Text accessibilityRole="header" style={styles.title}>Your account</Text>
     {state.status === 'restoring' ? <Text style={styles.text}>Restoring your session…</Text> : state.status === 'signed-in' ?
       <View key={state.user.id} style={styles.identity}><Text style={styles.text}>Signed in with Google</Text><Text selectable style={styles.text}>{state.user.email || 'Your Google account'}</Text></View> :
       <Text style={styles.text}>Sign in with your Google account. You can browse our collection without signing in.</Text>}
     {loading ? <View accessibilityLiveRegion="polite"><ActivityIndicator color="#535B40" accessibilityLabel="Account loading" /><Text style={styles.text}>{busy ? 'Updating your account…' : 'Please wait…'}</Text></View> : null}
     {message ? <Text accessibilityRole="alert" style={styles.text}>{message}</Text> : null}
-    {state.status !== 'restoring' ? <Pressable accessibilityRole="button" accessibilityState={{ disabled: loading, busy: loading }} disabled={loading}
+    {state.status !== 'restoring' ? <Pressable accessibilityRole="button" accessibilityLabel={state.status === 'signed-in' ? 'Sign out of your account' : 'Continue with Google'} accessibilityState={{ disabled: loading, busy: loading }} disabled={loading}
       onPress={() => { void (state.status === 'signed-in' ? signOut() : signIn()); }} style={[styles.button, loading && styles.disabled]}>
       <Text style={styles.buttonText}>{state.status === 'signed-in' ? 'Sign out' : 'Continue with Google'}</Text>
     </Pressable> : null}

@@ -1,10 +1,10 @@
 import { Pressable, StyleSheet, Text } from 'react-native';
 
-export function ActionButton({ label, onPress, disabled = false, secondary = false, accessibilityLabel }: {
-  label: string; onPress: () => void; disabled?: boolean; secondary?: boolean; accessibilityLabel?: string;
+export function ActionButton({ label, onPress, disabled = false, secondary = false, accessibilityLabel, busy = false }: {
+  label: string; onPress: () => void; disabled?: boolean; secondary?: boolean; accessibilityLabel?: string; busy?: boolean;
 }) {
   return <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel ?? label}
-    accessibilityState={{ disabled }} disabled={disabled} onPress={onPress}
+    accessibilityState={{ disabled, busy }} disabled={disabled} onPress={onPress}
     style={({ pressed }) => [styles.button, secondary && styles.secondary, (pressed || disabled) && styles.dim]}>
     <Text style={[styles.text, secondary && styles.secondaryText]}>{label}</Text>
   </Pressable>;
