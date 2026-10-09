@@ -4,19 +4,20 @@ import { createClient, processLock, type SupabaseClient } from '@supabase/supaba
 import { AppState, Platform } from 'react-native';
 import { readSupabaseConfig } from './config';
 let client: SupabaseClient | undefined;
-let binding: { url: string; key: string } | undefined;
+let binding: { url: string; key: string; storageKey?: string } | undefined;
 export function getSupabaseClient(): SupabaseClient {
   // Validate before even returning an existing client; never reuse a different backend binding.
-  const { url, key } = readSupabaseConfig();
-  if (binding && (binding.url !== url || binding.key !== key)) {
+  const { url, key, storageKey } = readSupabaseConfig();
+  if (binding && (binding.url !== url || binding.key !== key || binding.storageKey !== storageKey)) {
     throw new Error('Backend configuration changed. Relaunch the correct application environment.');
   }
   if (!client) {
     client = createClient(url, key, { auth: {
       storage: AsyncStorage, persistSession: true, autoRefreshToken: true,
       detectSessionInUrl: false, flowType: 'pkce', lock: processLock,
+      ...(storageKey ? { storageKey } : {}),
     } });
-    binding = { url, key };
+    binding = { url, key, storageKey };
   }
   return client;
 }

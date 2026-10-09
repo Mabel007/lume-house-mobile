@@ -72,6 +72,14 @@ This uses EAS cloud, not local Gradle. Ignored `.env.local` is not automatically
 
 ## Data and safeguards
 
+### Approved existing local Docker backend
+
+Development can also use the existing Lumé House Docker gateway at exactly `http://127.0.0.1:54321`. Its public key is approved by a source-controlled SHA-256 fingerprint; key values remain in ignored configuration only. Node build configuration validates the fingerprint, then binds the runtime's public key to the approved manifest. Production stays pinned and Staging cannot use this local gateway. Local Development uses a separate Auth storage namespace; production's existing namespace is unchanged. Do not print raw local Expo config: the manifest contains the same public key already embedded by Expo. Use the safe environment preflight instead.
+
+Populate ignored `.env.development.local` with only the two local public settings from the existing local stack through approved secure handling. Do not copy production `.env.local`. Key rotation requires an inspected, approved fingerprint update. The launcher still refuses missing/wrong keys and unknown gateways; no arbitrary URL override exists.
+
+After separate device/Metro approval, reverse BOTH ports for the selected authorized Samsung: `adb -s <serial> reverse tcp:8081 tcp:8081` and `adb -s <serial> reverse tcp:54321 tcp:54321`. Then run the controlled launcher. On Android, loopback reaches the phone unless the USB reverse exists; do not substitute a LAN address or open firewall ports. Debug-client cleartext access, installed .dev identity and callbacks require physical acceptance. Local Google provider/native redirects are not currently configured; do not substitute production OAuth. Existing local web synthetic fixture login is not a mobile login screen. No local mobile OAuth/device acceptance is implied by configuration support.
+
 Existing Supabase is authoritative; web owns backend migrations/admin. Active products/variants use real IDs and integer NLE minor units displayed NLe. Images resolve against `https://lume-house-delta.vercel.app` or safe credential-free HTTPS, supporting reviewed WebP/PNG/JPG/JPEG/SVG and nested paths. Missing/invalid/load-failed images use per-product accessible fallback without relaxing commerce validation.
 
 Native singleton Auth uses PKCE and unencrypted AsyncStorage with AppState refresh; local sign-out preserves independent web sessions. Preserve owner isolation, mutation UUID reuse and expected-quantity conflicts. Guest Bag, mobile checkout/profile/order features and admin duplication are not implied by the historical HNG scope.

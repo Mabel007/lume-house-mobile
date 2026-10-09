@@ -11,5 +11,6 @@ export function readEnvironment() {
     callback: typeof config?.scheme === 'string' ? `${config.scheme}://auth/callback` : undefined,
     url: process.env.EXPO_PUBLIC_SUPABASE_URL,
     key: process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+    localBackend: config?.extra?.localBackend,
   });
 }

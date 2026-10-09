@@ -31,6 +31,7 @@ function checkEnvironment(input, resolved, profiles = buildProfiles, validate = 
     variant: input.variant, androidPackage: resolved.android?.package, scheme: resolved.scheme,
     callback: typeof resolved.scheme === 'string' ? `${resolved.scheme}://auth/callback` : undefined,
     url: input.url, key: input.key,
+    localBackend: resolved.extra?.localBackend,
   });
   // Explicit projection: never return or log the public key or inherited credentials.
   return {
@@ -55,7 +56,19 @@ function main(args = process.argv.slice(2)) {
     const allowed = ['EXPO_PUBLIC_SUPABASE_URL', 'EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY'];
     if (Object.keys(publicConfig).some(name => !allowed.includes(name))) throw new Error('Unexpected environment-file settings.');
   }
-  const resolved = require('../app.config.js')({ config: require('../app.json').expo });
+  // Explicit file values must also drive the build-time local fingerprint guard.
+  const previous = {};
+  for (const name of ['EXPO_PUBLIC_SUPABASE_URL', 'EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY']) {
+    previous[name] = process.env[name];
+    if (publicConfig[name] === undefined) delete process.env[name]; else process.env[name] = publicConfig[name];
+  }
+  let resolved;
+  try { resolved = require('../app.config.js')({ config: require('../app.json').expo }); }
+  finally {
+    for (const name of Object.keys(previous)) {
+      if (previous[name] === undefined) delete process.env[name]; else process.env[name] = previous[name];
+    }
+  }
   const summary = checkEnvironment({
     variant: process.env.APP_VARIANT, profile: options['--profile'],
     url: publicConfig.EXPO_PUBLIC_SUPABASE_URL, key: publicConfig.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY,

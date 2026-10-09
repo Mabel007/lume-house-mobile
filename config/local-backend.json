@@ -1,0 +1,6 @@
+{
+  "origin": "http://127.0.0.1:54321",
+  "projectRef": "local:lume-house",
+  "publicKeySha256": "9705102db0d5f99ee08daa19a73e510d9877a2a9add9369da247cbbe6c2a0140",
+  "storageKey": "lume-house-development-local-auth-v1"
+}

@@ -3,6 +3,7 @@ const path = require('node:path');
 const { parseEnv } = require('node:util');
 const { spawnSync } = require('node:child_process');
 const { identityFor, validateEnvironment } = require('../config/environment');
+const { localBuildConfig } = require('../config/local-build');
 const root = path.resolve(__dirname, '..');
 const publicNames = ['EXPO_PUBLIC_SUPABASE_URL', 'EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY'];
 
@@ -12,7 +13,9 @@ function developmentPlan(content, inherited = {}, validate = validateEnvironment
     throw new Error('Development configuration must contain only the two required public Supabase settings.');
   }
   const identity = identityFor('development');
-  validate({ ...identity, url: values.EXPO_PUBLIC_SUPABASE_URL, key: values.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY });
+  const url = values.EXPO_PUBLIC_SUPABASE_URL;
+  const key = values.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  validate({ ...identity, url, key, localBackend: localBuildConfig('development', url, key) });
   const env = Object.fromEntries(Object.entries(inherited).filter(([name]) => !name.toUpperCase().startsWith('EXPO_PUBLIC_')));
   Object.assign(env, values, { APP_VARIANT: 'development', EXPO_NO_DOTENV: '1', EXPO_NO_CLIENT_ENV_VARS: '0' });
   return {

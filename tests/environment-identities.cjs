@@ -10,7 +10,7 @@ function resolve(variant) {
   const sandbox = {
     module: { exports: {} },
     process: { env: { APP_VARIANT: variant } },
-    require: () => variants,
+    require: name => name === './config/variants.json' ? variants : require('../config/local-build'),
   };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../app.config.js'), 'utf8'), sandbox);
   return JSON.parse(JSON.stringify(sandbox.module.exports({ config: baseline })));
