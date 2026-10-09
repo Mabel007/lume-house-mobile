@@ -48,6 +48,20 @@ Package `com.najbuilds.lumehouse`, scheme `lumehousemobile`; EAS project is alre
 
 All profiles explicitly set APP_VARIANT and disable dotenv. Missing/unknown selectors are refused by dynamic configuration. The existing Expo project association, production identity and static app.json fields remain preserved. Backend/callback guards run before client creation/session restoration; NONPROD remains unapproved/unconfigured. EAS environment variables must be configured separately, public-only for the two client settings. No EAS console/build/update/credentials action is implied here. New identities/schemes need separately approved native builds; JavaScript cannot change installed package identity. Generated ignored native folders must not be reused to build a different package without an approved CNG/build workflow.
 
+Read-only environment preflight (no Supabase client, session, network, Metro or build):
+
+```powershell
+$env:APP_VARIANT='production'
+node scripts/environment-preflight.cjs --profile production --env-file .env.local
+# After separately approved NONPROD configuration:
+$env:APP_VARIANT='development'
+node scripts/environment-preflight.cjs --profile development --env-file .env.development.local
+$env:APP_VARIANT='staging'
+node scripts/environment-preflight.cjs --profile staging --env-file .env.staging.local
+```
+
+Preflight checks resolved name/package/scheme, Expo association, backend reference and profile/distribution compatibility, and prints only safe identifiers. Missing/wrong configuration exits nonzero. Environment files must contain only the two public client settings. Development/Staging are expected to refuse until the approved NONPROD registry entry is provisioned. A passing preflight does not verify hosted configuration, publishable-key ownership, credentials, native runtime or physical QA.
+
 After separate build approval and private verification of both existing public variables in EAS production, the standalone command is:
 
 ```powershell
