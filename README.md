@@ -10,18 +10,26 @@ Owner-reported physical development launch and production/shared Bag synchroniza
 
 ## Development
 
-For a fresh checkout, run `npm ci` only when dependency installation is approved. Copy `.env.example` to ignored `.env.local`; supply only the existing project's public Supabase URL and publishable key. Expo public values embed in bundles. Never include server/service-role, Google/Resend credentials or signing secrets.
+For a fresh checkout, run `npm ci` only when dependency installation is approved. Production `.env.local` remains preserved but must not be used for Development or Staging. Expo public values embed in bundles. Never include server/service-role, Google/Resend credentials or signing secrets.
 
 Use the installed native development client for Google login. Expo Go and Expo Web Google login are deliberately unsupported. Serve updated JavaScript with:
 
 ```powershell
-npm start -- --dev-client
+node scripts/start-development.cjs --check
+# After approved NONPROD setup and installation of a separate .dev client:
+adb devices -l
+adb -s <authorized-device-serial> reverse tcp:8081 tcp:8081
+node scripts/start-development.cjs
 ```
+
+The controlled launcher uses only ignored `.env.development.local`, allowing exactly `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. It removes inherited public settings, sets APP_VARIANT=development, disables automatic dotenv loading and serves the installed Expo CLI on localhost:8081. It currently refuses launch because the approved NONPROD reference is unset. Do not enter an arbitrary project reference or bypass the launcher with production `.env.local`. `--check` never starts Metro. Open the separately installed Lumé House Dev client using its launcher and localhost:8081 after USB reverse; physical acceptance is pending. The old production-package development APK cannot supply the new independent identity.
 
 Metro must be reachable from the phone. Launch/sign-in/restoration can load the Bag; `load_variant_cart()` can create/promote server state. Do not run authenticated runtime acceptance under a strict no-hosted-writes audit. No server/device action is implied by these instructions.
 
 ```powershell
 npm run typecheck
+$env:APP_VARIANT='production'
+$env:EXPO_NO_DOTENV='1'
 npm run lint -- --no-cache
 node tests/auth-contract.cjs
 node --test tests/bag-contract.cjs tests/product-image-contract.cjs tests/product-media-fallback.cjs
@@ -33,8 +41,12 @@ Auth checks simulate callback/browser/crypto. Bag has17 mocked contracts; media 
 
 Package `com.najbuilds.lumehouse`, scheme `lumehousemobile`; EAS project is already associated. Owner historically verified native Supabase base/optional sb_flow_id redirects while preserving web redirects. Do not repeat stale initialization or change Auth settings. iOS delivery remains unverified.
 
-- `development`: internal development client, Metro-served current JavaScript.
-- `preview`: internal non-development standalone APK using production EAS environment; embedded JavaScript/assets need no Metro, but backend/media still need internet.
+- `development`: Lumé House Dev / com.najbuilds.lumehouse.dev / lumehousemobile-dev; EAS development environment; internal development APK using Metro and approved NONPROD.
+- `staging`: Lumé House Staging / com.najbuilds.lumehouse.staging / lumehousemobile-staging; EAS preview environment; internal standalone APK using the same approved NONPROD, without Metro.
+- `production`: Lumé House / com.najbuilds.lumehouse / lumehousemobile; EAS production environment; store Android App Bundle preparation, not an approved public release.
+- Historical `preview`: remains production identity/backend/EAS production environment and internal standalone APK. It is not staging and was not repurposed. Embedded JavaScript/assets need no Metro; backend/media need internet.
+
+All profiles explicitly set APP_VARIANT and disable dotenv. Missing/unknown selectors are refused by dynamic configuration. The existing Expo project association, production identity and static app.json fields remain preserved. Backend/callback guards run before client creation/session restoration; NONPROD remains unapproved/unconfigured. EAS environment variables must be configured separately, public-only for the two client settings. No EAS console/build/update/credentials action is implied here. New identities/schemes need separately approved native builds; JavaScript cannot change installed package identity. Generated ignored native folders must not be reused to build a different package without an approved CNG/build workflow.
 
 After separate build approval and private verification of both existing public variables in EAS production, the standalone command is:
 
