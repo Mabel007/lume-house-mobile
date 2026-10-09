@@ -9,7 +9,8 @@ import { useAuth } from '../features/auth/AuthContext';
 import { useBag } from '../features/cart/BagContext';
 import { MAX_QUANTITY } from '../features/cart/cart';
 import { ActionButton } from './ActionButton';
-export function ProductCard({ product }: { product: Product }) {
+import { productHref } from '../features/products/productRoute';
+export function ProductCard({ product, details = false }: { product: Product; details?: boolean }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
   const { state: auth, busy: authBusy } = useAuth();
@@ -27,13 +28,22 @@ export function ProductCard({ product }: { product: Product }) {
     if (!bag.signedIn) { router.push('/account'); return; }
     if (await bag.dispatch({ type: 'add', variantId: variant.id })) setConfirmation('Added to your Bag.');
   }
-  return <View style={styles.card}>
+  const information = <>
     <View style={[styles.photo, { backgroundColor: product.color }]}>
       <ProductImage image={product.image} name={product.name} />
     </View>
     <Text style={styles.category}>{product.category}</Text>
-    <Text style={styles.name}>{product.name}</Text>
+    <Text accessibilityRole={details ? 'header' : undefined} style={styles.name}>{product.name}</Text>
     <Text style={styles.price}>{!variant && price.from ? 'From ' : ''}{formatMoney(variant?.price ?? price.price)}</Text>
+  </>;
+  return <View style={styles.card}>
+    {details ? <View>{information}</View> : <Pressable accessibilityRole="link" accessibilityLabel={`View details for ${product.name}`}
+      onPress={() => router.navigate(productHref(product.id))}>{information}</Pressable>}
+    {details ? <>
+      <Text style={styles.description}>{product.description}</Text>
+      <Text accessibilityLiveRegion="polite" style={styles.optionText}>{variant ? available ? 'Available' : 'Unavailable' :
+        variants.filter(choice => !optionsRequired || !choice.isDefault).some(variantAvailable) ? 'Choose an available selection below.' : 'Unavailable'}</Text>
+    </> : null}
     {optionsRequired ? <View style={styles.options}>
       <Text style={styles.category}>Choose a selection</Text>
       {variants.filter(variant => !variant.isDefault).map(choice => {
@@ -66,6 +76,7 @@ const styles = StyleSheet.create({
   category: { color: '#665F52', fontSize: 12, marginTop: 12 },
   name: { color: '#292820', fontSize: 17, fontWeight: '500', marginTop: 4 },
   price: { color: '#423F38', fontSize: 15, marginTop: 6 },
+  description: { color: '#423F38', fontSize: 16, lineHeight: 25, marginVertical: 16 },
   options: { gap: 8, marginTop: 8 }, option: { minHeight: 48, borderWidth: 1, borderColor: '#A59C8B',
     borderRadius: 8, padding: 10, gap: 4 }, selected: { borderColor: '#535B40', backgroundColor: '#E7E8DB', borderWidth: 2 },
   optionText: { color: '#423F38', fontSize: 13, lineHeight: 19 }, dim: { opacity: 0.55 }, actions: { marginTop: 12, gap: 8 },
