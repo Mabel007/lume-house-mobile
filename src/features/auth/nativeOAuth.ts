@@ -3,6 +3,7 @@ import Constants, { ExecutionEnvironment } from 'expo-constants';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
+import { readEnvironment } from '../../config/environment';
 import { getSupabaseClient } from '../../lib/supabase/client';
 import { parseCallback, pendingIsFresh } from './callback';
 import { ensurePKCECrypto } from './pkceCrypto';
@@ -18,16 +19,17 @@ export function nativeCallbackURL() {
   if (Platform.OS === 'web' || Constants.executionEnvironment === ExecutionEnvironment.StoreClient) {
     throw new Error('Use a native build for Google sign-in.');
   }
-  const callback = Linking.createURL('auth/callback', { scheme: 'lumehousemobile', isTripleSlashed: false });
+  const environment = readEnvironment();
+  const callback = Linking.createURL('auth/callback', { scheme: environment.scheme, isTripleSlashed: false });
   // Fail closed if a development runtime changes the allowlisted callback contract.
-  if (callback !== 'lumehousemobile://auth/callback') throw new Error('Native callback configuration is unavailable.');
+  if (callback !== environment.callback) throw new Error('Native callback configuration is unavailable.');
   return callback;
 }
 
 export function isNativeCallback(value: string) {
   try {
     const url = new URL(value);
-    return url.protocol === 'lumehousemobile:' && url.hostname === 'auth' && url.pathname === '/callback';
+    return url.protocol === `${readEnvironment().scheme}:` && url.hostname === 'auth' && url.pathname === '/callback';
   } catch { return false; }
 }
 

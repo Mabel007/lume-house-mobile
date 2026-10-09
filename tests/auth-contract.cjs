@@ -76,6 +76,7 @@ async function run() {
     'expo-web-browser': { openAuthSessionAsync: async () => browserResult },
     'react-native': { Platform: { OS: 'android' } },
     '../../lib/supabase/client': { getSupabaseClient: () => ({ auth }) }, './callback': callback,
+    '../../config/environment': { readEnvironment: () => ({ scheme: 'lumehousemobile', callback: target }) },
     './pkceCrypto': { ensurePKCECrypto: () => {} },
   });
   assert.equal(await oauth.startNativeGoogleOAuth(), 'cancelled');
