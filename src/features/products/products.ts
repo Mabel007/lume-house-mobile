@@ -23,7 +23,6 @@ export function parseProducts(data: unknown, currency: string): Product[] {
       "name",
       "description",
       "category",
-      "image_path",
       "background_color",
     ]) {
       if (typeof row[field] !== "string" || !(row[field] as string).trim()) {
@@ -42,19 +41,10 @@ export function parseProducts(data: unknown, currency: string): Product[] {
     const id = row.id as string;
     if (ids.has(id)) throw new Error("Duplicate product");
     ids.add(id);
-    const image = row.image_path as string;
-    const isLocal = image.startsWith("/images/") && !image.includes("\\");
-    let isHttps = false;
-    try {
-      const url = new URL(image);
-      isHttps = url.protocol === "https:" && !url.username && !url.password;
-    } catch {
-      /* Relative image paths are validated above. */
-    }
-    if (
-      (!isLocal && !isHttps) ||
-      !/^#[0-9a-fA-F]{6}$/.test(row.background_color as string)
-    ) {
+    // Media is optional for presentation, never commerce authority. Keep malformed
+    // or missing media isolated to the image fallback; all other fields stay strict.
+    const image = typeof row.image_path === "string" ? row.image_path : "";
+    if (!/^#[0-9a-fA-F]{6}$/.test(row.background_color as string)) {
       throw new Error("Invalid product presentation");
     }
     return {

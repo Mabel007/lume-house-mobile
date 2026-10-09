@@ -1,17 +1,15 @@
 import { useState } from 'react';
-import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { Product } from '../features/products/products';
 import { formatMoney } from '../config/shop';
-import { resolveProductImage } from '../utils/productImage';
+import { ProductImage } from './ProductImage';
 import { cataloguePrice, requiresOptions, selectedVariant, variantAvailable, variantLabel } from '../features/products/variants';
 import { useAuth } from '../features/auth/AuthContext';
 import { useBag } from '../features/cart/BagContext';
 import { MAX_QUANTITY } from '../features/cart/cart';
 import { ActionButton } from './ActionButton';
 export function ProductCard({ product }: { product: Product }) {
-  const [failed, setFailed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
   const { state: auth, busy: authBusy } = useAuth();
@@ -31,7 +29,7 @@ export function ProductCard({ product }: { product: Product }) {
   }
   return <View style={styles.card}>
     <View style={[styles.photo, { backgroundColor: product.color }]}>
-      {failed ? <Text style={styles.fallback}>Image unavailable</Text> : <Image source={{ uri: resolveProductImage(product.image) }} style={styles.image} contentFit="cover" accessibilityLabel={product.name} accessible onError={() => setFailed(true)} />}
+      <ProductImage image={product.image} name={product.name} />
     </View>
     <Text style={styles.category}>{product.category}</Text>
     <Text style={styles.name}>{product.name}</Text>
@@ -65,7 +63,6 @@ export function ProductCard({ product }: { product: Product }) {
 const styles = StyleSheet.create({
   card: { flex: 1, minWidth: 0, margin: 6, paddingBottom: 16 },
   photo: { aspectRatio: 0.9, borderRadius: 12, overflow: 'hidden', justifyContent: 'center', alignItems: 'center' },
-  image: { width: '100%', height: '100%' }, fallback: { color: '#423F38', padding: 12 },
   category: { color: '#665F52', fontSize: 12, marginTop: 12 },
   name: { color: '#292820', fontSize: 17, fontWeight: '500', marginTop: 4 },
   price: { color: '#423F38', fontSize: 15, marginTop: 6 },

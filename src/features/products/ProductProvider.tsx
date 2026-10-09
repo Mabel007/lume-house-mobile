@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { shop } from '../../config/shop';
 import { getSupabaseClient } from '../../lib/supabase/client';
-import { resolveProductImage } from '../../utils/productImage';
 import { ProductContext, type CatalogueState } from './ProductContext';
 import { loadProducts } from './productRepository';
 
@@ -17,7 +16,6 @@ export function ProductProvider({ children }: { children: ReactNode }) {
     async function restore() {
       try {
         const products = await loadProducts(getSupabaseClient(), shop.currency, controller.signal);
-        products.forEach(product => resolveProductImage(product.image));
         if (!controller.signal.aborted) setState({ status: 'ready', products });
       } catch {
         if (!controller.signal.aborted) setState({ status: 'error' });
