@@ -38,6 +38,14 @@ test('production preserves every historical configuration field', () => {
   assert.equal(baseline.extra.appVariant, undefined);
 });
 
+test('Development launcher uses only its isolated scheme and does not alter Staging plugins', () => {
+  const config = resolve('development');
+  assert.deepEqual(config.plugins.slice(0, -1), baseline.plugins);
+  assert.deepEqual(config.plugins.at(-1), ['expo-dev-client', { addGeneratedScheme: false, launchMode: 'launcher' }]);
+  assert.deepEqual(resolve('staging').plugins, baseline.plugins);
+  assert.equal(baseline.plugins.some(plugin => Array.isArray(plugin) && plugin[0] === 'expo-dev-client'), false);
+});
+
 test('missing, unknown and prototype property variants are refused', () => {
   for (const variant of [undefined, '', 'preview', 'Production', ' production ', 'toString', '__proto__']) {
     assert.throws(() => resolve(variant), /APP_VARIANT must explicitly select/);

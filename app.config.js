@@ -12,6 +12,9 @@ module.exports = ({ config }) => {
     ...config,
     name: identity.name,
     scheme: identity.scheme,
+    ...(variant === 'development' ? {
+      plugins: [...(config.plugins || []), ['expo-dev-client', { addGeneratedScheme: false, launchMode: 'launcher' }]],
+    } : {}),
     android: { ...config.android, package: identity.androidPackage },
     extra: { ...config.extra, appVariant: variant, ...(localBackend ? { localBackend } : {}) },
   };
