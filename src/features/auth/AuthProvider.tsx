@@ -3,6 +3,7 @@ import * as Linking from 'expo-linking';
 import { getSupabaseClient, watchAuthRefresh } from '../../lib/supabase/client';
 import { AuthContext, type AuthState } from './AuthContext';
 import { completeNativeOAuth, isNativeCallback, startNativeGoogleOAuth } from './nativeOAuth';
+import { signInLocalFixture } from './localFixtureAuth';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ status: 'restoring' });
@@ -88,5 +89,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  return <AuthContext.Provider value={{ state, busy, message, signIn, signOut, completeCallback }}>{children}</AuthContext.Provider>;
+  async function signInFixture(alias: string, code: string) {
+    if (action.current || callbacks.current || state.status !== 'signed-out') return;
+    action.current = true; setBusy(true); setMessage(null);
+    try { await signInLocalFixture(alias, code); }
+    catch { if (mounted.current) setMessage('Local sign-in failed. Create a new enrollment code and try again.'); }
+    finally { action.current = false; if (mounted.current) setBusy(callbacks.current > 0); }
+  }
+
+  return <AuthContext.Provider value={{ state, busy, message, signIn, signOut, signInFixture, completeCallback }}>{children}</AuthContext.Provider>;
 }

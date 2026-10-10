@@ -9,6 +9,7 @@ export type AuthContract = {
   message: string | null;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
+  signInFixture: (alias: string, code: string) => Promise<void>;
   completeCallback: (url: string) => Promise<OAuthResult>;
 };
 export const AuthContext = createContext<AuthContract | null>(null);

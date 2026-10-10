@@ -1,5 +1,6 @@
 // Isolated contract tests: no network, credentials or fabricated provider login.
 const assert = require('node:assert/strict');
+const { Buffer } = require('node:buffer');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require('typescript');
