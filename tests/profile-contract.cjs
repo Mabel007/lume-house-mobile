@@ -131,3 +131,104 @@ test('delivery defaults share contact fields, allow missing information and reje
   assert.equal(fixture.writes[0][1].default_street_address, 'Synthetic landmark');
   assert.equal(fixture.writes[0][1].phone, '+23276521208');
 });
+function mountEditor(userId, rows, saves) {
+  const { hooks, load } = require('./helpers/source.cjs');
+  const host = hooks(); let controller;
+  class Tracked extends ProfileController { constructor(repository) { super(repository); controller = this; } }
+  const Screen = load('src/features/profile/CustomerProfile.tsx', {
+    react: { ...host.react, useSyncExternalStore: (subscribe, get) => get() },
+    './ProfileController': { ProfileController: Tracked },
+    './profileRepository': {
+      loadProfile: async (_client, id) => profile.mapProfile(rows[id]),
+      saveProfile: async (_client, id, draft, fields) => { saves.push({ id, fields }); return { ...profile.mapProfile(rows[id]), ...Object.fromEntries(fields.map(key => [key, draft[key]])) }; },
+    },
+    '../../lib/supabase/client': { getSupabaseClient: () => ({}) },
+    '../../components/ActionButton': { ActionButton: 'ActionButton' },
+  }).CustomerProfile;
+  return { host, controller: () => controller, render: () => { host.begin(); return Screen({ userId, email: `${userId}@example.invalid` }); } };
+}
+const settle = () => new Promise(done => setImmediate(done));
+const row = (id, name) => ({ id, full_name: name, phone: '+23276521208', default_street_address: 'Landmark', default_area: 'Community', default_city: 'Town' });
+test('back leaves a clean editor alone and only confirms meaningful unsaved edits', async () => {
+  const { find, events, pressBack, resetEvents } = require('./helpers/source.cjs');
+  resetEvents(); const saves = [];
+  const view = mountEditor('a', { a: row('a', 'Customer A') }, saves);
+  view.render(); await settle();
+  assert.equal(pressBack(), false, 'browsing without an open editor must not confirm');
+  find(view.render(), element => element.props?.label === 'Edit profile').props.onPress();
+  assert.equal(events.back.length, 1);
+  assert.equal(pressBack(), false, 'an opened but untouched editor is clean');
+  view.render();
+  find(view.render(), element => element.type === 'TextInput' && element.props.accessibilityLabel === 'Full name').props.onChangeText('Customer A');
+  assert.equal(pressBack(), false, 'typing a saved value back is not a meaningful change');
+  find(view.render(), element => element.type === 'TextInput' && element.props.accessibilityLabel === 'Full name').props.onChangeText('Customer A editing');
+  view.render();
+  assert.equal(pressBack(), true);
+  assert.equal(events.alerts.length, 1);
+  const [title, message, buttons] = events.alerts[0];
+  assert.match(title, /discard/i); assert.match(message, /not saved/i);
+  assert.deepEqual(plain(buttons.map(button => button.text)), ['Continue editing', 'Discard changes']);
+  assert.equal(saves.length, 0, 'back must never silently save or drop data');
+  // Continuing editing keeps the draft and the editor open.
+  assert.equal(view.controller().getSnapshot().draft.full_name, 'Customer A editing');
+  assert.ok(find(view.render(), element => element.props.accessibilityLabel === 'Full name'));
+  // Discarding restores the last saved values and closes the editor.
+  assert.equal(pressBack(), true, 'back keeps confirming while the draft is unsaved');
+  assert.equal(events.alerts.length, 2);
+  events.alerts[1][2][1].onPress();
+  view.render();
+  assert.equal(view.controller().getSnapshot().draft.full_name, 'Customer A');
+  assert.equal(find(view.render(), element => element.props.accessibilityLabel === 'Full name'), undefined);
+  assert.equal(pressBack(), false, 'after discarding, back behaves normally');
+  assert.equal(saves.length, 0);
+  view.host.unmount();
+});
+test('back guard registers one listener, spares keyboard dismissal and detaches on unmount', async () => {
+  const { find, events, pressBack, keyDown, resetEvents } = require('./helpers/source.cjs');
+  resetEvents(); const saves = [];
+  const view = mountEditor('a', { a: row('a', 'Customer A') }, saves);
+  view.render(); await settle();
+  find(view.render(), element => element.props?.label === 'Edit profile').props.onPress();
+  for (let render = 0; render < 4; render++) { view.render(); assert.equal(events.back.length, 1); assert.equal(events.keyboard.length, 2); }
+  find(view.render(), element => element.type === 'TextInput' && element.props.accessibilityLabel === 'Full name').props.onChangeText('Draft in progress');
+  view.render();
+  keyDown('keyboardDidShow');
+  assert.equal(pressBack(), true, 'back must consume keyboard dismissal');
+  assert.equal(events.dismissed, 1); assert.equal(events.alerts.length, 0);
+  assert.equal(events.back.length, 1);
+  keyDown('keyboardDidHide');
+  assert.equal(pressBack(), true, 'a dirty editor still confirms once the keyboard is gone');
+  assert.equal(events.alerts.length, 1);
+  assert.equal(view.controller().isActive(), true);
+  view.host.unmount();
+  assert.equal(events.back.length, 0, 'unmount must remove the back listener');
+  assert.equal(view.controller().isActive(), false);
+});
+test('account switching never leaks a draft or a back listener to the next customer', async () => {
+  const { find, events, pressBack, resetEvents } = require('./helpers/source.cjs');
+  resetEvents(); const saves = [];
+  const rows = { a: row('a', 'Customer A'), b: row('b', 'Customer B') };
+  const first = mountEditor('a', rows, saves);
+  first.render(); await settle();
+  find(first.render(), element => element.props?.label === 'Edit profile').props.onPress();
+  find(first.render(), element => element.type === 'TextInput' && element.props.accessibilityLabel === 'Full name').props.onChangeText('Private customer A draft');
+  first.render(); assert.equal(pressBack(), true);
+  first.host.unmount(); resetEvents();
+  assert.equal(first.controller().getSnapshot().draft.full_name, '', 'sign-out must erase the private draft');
+  const second = mountEditor('b', rows, saves);
+  second.render(); await settle();
+  assert.equal(events.back.length, 1, 'the previous screen must not leave a second listener');
+  assert.equal(pressBack(), false);
+  find(second.render(), element => element.props?.label === 'Edit profile').props.onPress();
+  assert.equal(find(second.render(), element => element.type === 'TextInput' && element.props.accessibilityLabel === 'Full name').props.value, 'Customer B');
+  assert.equal(events.alerts.length, 0);
+  second.host.unmount();
+});
+test('whitespace-only edits are not treated as unsaved changes', () => {
+  const saved = profile.mapProfile(row('a', 'Customer A'));
+  assert.equal(profile.hasUnsavedChanges(saved, { ...saved, full_name: 'Customer A  ' }, profile.editorFields.profile), false);
+  assert.equal(profile.hasUnsavedChanges(saved, { ...saved, default_city: '' }, profile.editorFields.profile), false);
+  assert.equal(profile.hasUnsavedChanges(saved, { ...saved, default_city: '' }, profile.editorFields.delivery), true);
+  assert.deepEqual(plain([...profile.editorFields.profile]), ['full_name', 'phone']);
+  assert.deepEqual(plain([...profile.editorFields.delivery]), plain(profile.profileFields));
+});

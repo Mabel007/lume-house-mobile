@@ -26,3 +26,11 @@ export function profileValues(profile: Profile, fields: readonly ProfileField[])
   for (const key of fields) if (errors[key]) throw new Error(errors[key]);
   return Object.fromEntries(fields.map(key => [key, profile[key].trim() ? key === 'phone' ? normalizePhone(profile[key]) : profile[key].trim() : null]));
 }
+export const editorFields: Record<'profile' | 'delivery', readonly ProfileField[]> = {
+  profile: ['full_name', 'phone'],
+  delivery: profileFields,
+};
+// Whitespace-only churn is not a meaningful edit because save() trims it away.
+export function hasUnsavedChanges(saved: Profile, draft: Profile, fields: readonly ProfileField[]) {
+  return fields.some(key => draft[key].trim() !== saved[key].trim());
+}

@@ -1,10 +1,10 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { ActivityIndicator, Alert, BackHandler, Keyboard, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ActionButton } from '../../components/ActionButton';
 import { getSupabaseClient } from '../../lib/supabase/client';
 import { ProfileController } from './ProfileController';
 import { loadProfile, saveProfile } from './profileRepository';
-import type { ProfileField } from './profile';
+import { editorFields, hasUnsavedChanges, type ProfileField } from './profile';
 
 export function CustomerProfile({ userId, email }: { userId: string; email?: string }) {
   const [controller] = useState(() => {
@@ -17,6 +17,27 @@ export function CustomerProfile({ userId, email }: { userId: string; email?: str
   const [editing, setEditing] = useState<'profile' | 'delivery' | null>(null);
   useEffect(() => { controller.activate(); void controller.refresh(); return () => controller.deactivate(); }, [controller]);
   const busy = state.status === 'loading' || state.status === 'saving';
+  const dirty = !busy && editing !== null && hasUnsavedChanges(state.saved, state.draft, editorFields[editing]);
+  const keyboardOpen = useRef(false);
+  const backPress = useRef<() => boolean>(() => false);
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => backPress.current());
+    const shown = Keyboard.addListener('keyboardDidShow', () => { keyboardOpen.current = true; });
+    const hidden = Keyboard.addListener('keyboardDidHide', () => { keyboardOpen.current = false; });
+    return () => { subscription.remove(); shown.remove(); hidden.remove(); };
+  }, []);
+  useEffect(() => {
+    backPress.current = () => {
+      // Android can spend the first Back on hiding the keyboard, so never treat that as leaving the editor.
+      if (keyboardOpen.current) { Keyboard.dismiss(); return true; }
+      if (!dirty) return false;
+      Alert.alert('Discard your changes?', 'These details are not saved yet. Discarding restores your last saved values.', [
+        { text: 'Continue editing', style: 'cancel' },
+        { text: 'Discard changes', style: 'destructive', onPress: () => { controller.cancel(); setEditing(null); } },
+      ]);
+      return true;
+    };
+  });
   function field(key: ProfileField, label: string) {
     return <View style={styles.field} key={key}><Text style={styles.label}>{label}</Text>
       <TextInput accessibilityLabel={label} accessibilityHint={state.errors[key] || 'Optional saved profile detail'} value={state.draft[key]} onChangeText={value => controller.edit(key, value)} editable={!busy}
@@ -31,7 +52,7 @@ export function CustomerProfile({ userId, email }: { userId: string; email?: str
     {state.message ? <Text accessibilityLiveRegion="polite" style={styles.text}>{state.message}</Text> : null}
     {state.status === 'error' ? <ActionButton label="Retry loading details" onPress={() => void controller.refresh()} /> : state.status !== 'loading' ? <>
       {editing === 'profile' ? <>{field('full_name', 'Full name')}{field('phone', 'Contact phone')}
-        <ActionButton label={state.status === 'saving' ? 'Saving…' : 'Save profile'} busy={busy} disabled={busy} onPress={() => { void controller.save(['full_name', 'phone']).then(saved => { if (saved) setEditing(null); }); }} />
+        <ActionButton label={state.status === 'saving' ? 'Saving…' : 'Save profile'} busy={busy} disabled={busy} onPress={() => { void controller.save(editorFields.profile).then(saved => { if (saved) setEditing(null); }); }} />
         <ActionButton label="Cancel profile changes" secondary disabled={busy} onPress={() => { controller.cancel(); setEditing(null); }} /></> : editing === null ? <>
         <Text style={styles.text}>{state.saved.phone || 'No contact phone saved.'}</Text>
         <ActionButton label="Edit profile" secondary onPress={() => setEditing('profile')} />
@@ -43,7 +64,7 @@ export function CustomerProfile({ userId, email }: { userId: string; email?: str
         {field('full_name', 'Delivery contact name')}{field('phone', 'Delivery contact phone')}
         {field('default_street_address', 'Street address / landmark')}{field('default_area', 'Area / community')}{field('default_city', 'City / town')}
         <Text style={styles.text}>Saved defaults are optional. Checkout will ask for any required missing details.</Text>
-        <ActionButton label={state.status === 'saving' ? 'Saving…' : 'Save delivery details'} disabled={busy} busy={busy} onPress={() => { void controller.save(['full_name', 'phone', 'default_street_address', 'default_area', 'default_city']).then(saved => { if (saved) setEditing(null); }); }} />
+        <ActionButton label={state.status === 'saving' ? 'Saving…' : 'Save delivery details'} disabled={busy} busy={busy} onPress={() => { void controller.save(editorFields.delivery).then(saved => { if (saved) setEditing(null); }); }} />
         <ActionButton label="Cancel delivery changes" secondary disabled={busy} onPress={() => { controller.cancel(); setEditing(null); }} />
       </> : editing === null ? <>
         <Text style={styles.text}>{[state.saved.default_street_address, state.saved.default_area, state.saved.default_city].filter(Boolean).join('\n') || 'No delivery address saved.'}</Text>

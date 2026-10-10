@@ -7,6 +7,23 @@ const native = Object.fromEntries(['View', 'Text', 'Pressable', 'FlatList', 'Scr
 native.Platform = { OS: 'android' };
 native.StyleSheet = { create: value => value };
 native.useWindowDimensions = () => ({ width: 400, fontScale: 1 });
+const events = { back: [], keyboard: [], alerts: [], dismissed: 0 };
+function remove(list, entry) { const at = list.indexOf(entry); if (at >= 0) list.splice(at, 1); }
+native.BackHandler = { addEventListener: (type, listener) => {
+  if (type !== 'hardwareBackPress') throw new Error(`Unexpected back event: ${type}`);
+  events.back.push(listener);
+  return { remove: () => remove(events.back, listener) };
+} };
+native.Keyboard = { addListener: (type, listener) => { const entry = { type, listener }; events.keyboard.push(entry); return { remove: () => remove(events.keyboard, entry) }; }, dismiss: () => { events.dismissed++; } };
+native.Alert = { alert: (...args) => { events.alerts.push(args); } };
+function pressBack() {
+  // React Native runs hardware back listeners newest-first and stops at the first that returns true.
+  for (const listener of [...events.back].reverse()) if (listener() === true) return true;
+  return false;
+}
+function keyDown(type) { events.keyboard.filter(entry => entry.type === type).forEach(entry => entry.listener()); }
+// Clears recorded interactions only; live listener registrations follow component mount/unmount.
+function resetEvents() { events.alerts = []; events.dismissed = 0; }
 function load(file, overrides = {}) {
   const fixture = { exports: {} };
   const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: {
@@ -26,14 +43,24 @@ function load(file, overrides = {}) {
   return fixture.exports;
 }
 function hooks() {
-  const slots = []; let index = 0;
-  return { begin: () => { index = 0; }, react: {
+  const slots = []; const effects = []; let index = 0; let effect = 0;
+  return { begin: () => { index = 0; effect = 0; }, react: {
     useState: initial => {
       const slot = index++;
       if (!(slot in slots)) slots[slot] = typeof initial === 'function' ? initial() : initial;
       return [slots[slot], value => { slots[slot] = typeof value === 'function' ? value(slots[slot]) : value; }];
     }, useCallback: fn => fn,
-  } };
+    useRef: initial => { const slot = index++; if (!(slot in slots)) slots[slot] = { current: initial }; return slots[slot]; },
+    useEffect: (fn, deps) => {
+      const slot = effect++;
+      const previous = effects[slot];
+      // A missing dependency array re-runs the effect every render, as in React.
+      if (!previous || !deps || deps.length !== previous.deps.length || deps.some((value, key) => value !== previous.deps[key])) {
+        previous?.cleanup?.();
+        effects[slot] = { deps, cleanup: fn() };
+      }
+    },
+  }, unmount: () => { effects.splice(0).forEach(entry => entry?.cleanup?.()); } };
 }
 function find(element, predicate) {
   if (!element || typeof element !== 'object') return undefined;
@@ -54,4 +81,4 @@ function duplicateKeys(element, report = []) {
   for (const child of children) duplicateKeys(child, report);
   return report;
 }
-module.exports = { load, hooks, find, duplicateKeys, native };
+module.exports = { load, hooks, find, duplicateKeys, native, events, pressBack, keyDown, resetEvents };
