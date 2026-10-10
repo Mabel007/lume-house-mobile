@@ -18,6 +18,29 @@ test('account identity is keyed per customer and hidden immediately on sign-out'
   assert.equal(find(tree, element => element.type === 'KeyboardAvoidingView').props.behavior, 'height');
   assert.equal(find(tree, element => element.type === 'ScrollView').props.keyboardDismissMode, 'on-drag');
 });
+test('account screen renders no duplicate sibling keys in any status', () => {
+  const { native, find, duplicateKeys } = require('./helpers/source.cjs');
+  let state = { status: 'signed-in', user: { id: 'a', email: 'a@example.invalid' } };
+  const Screen = load('src/features/auth/AccountScreen.tsx', { react: { useState: value => [value, () => {}] }, 'react-native': native,
+    'expo-router': { Link: 'Link' }, '../profile/CustomerProfile': { CustomerProfile: 'CustomerProfile' }, './localFixtureAuth': { localFixtureAvailable: () => true },
+    './AuthContext': { useAuth: () => ({ state, busy: false, message: 'Loading' }) } }).default;
+  for (const next of [
+    { status: 'signed-in', user: { id: 'a', email: 'a@example.invalid' } },
+    { status: 'signed-in', user: { id: 'customer-uuid-with-dashes', email: null } },
+    { status: 'signed-out' },
+    { status: 'restoring' },
+  ]) {
+    state = next; const tree = Screen();
+    assert.deepEqual(duplicateKeys(tree), [], `duplicate sibling keys rendering ${next.status} as ${next.user?.id}`);
+  }
+  // The identity block and CustomerProfile must stay distinct, while CustomerProfile keeps remounting per customer.
+  state = { status: 'signed-in', user: { id: 'a', email: 'a@example.invalid' } }; const tree = Screen();
+  const identity = find(tree, element => element.type === 'View' && element.key !== null);
+  assert.equal(identity.key, 'identity-a');
+  assert.equal(find(tree, element => element.type === 'CustomerProfile').key, 'a');
+  state = { status: 'signed-in', user: { id: 'b', email: 'b@example.invalid' } };
+  assert.equal(find(Screen(), element => element.type === 'View' && element.key !== null).key, 'identity-b');
+});
 test('delivery UI exposes labelled fields, inline errors, save/cancel and empty states', () => {
   const { hooks, find } = require('./helpers/source.cjs'); const host = hooks(); let snapshot = { status: 'ready', saved: blank(), draft: blank(), errors: { phone: 'Invalid phone' }, message: null };
   let cancelled = false; const calls = [];

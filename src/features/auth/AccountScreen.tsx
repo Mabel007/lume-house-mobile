@@ -15,7 +15,7 @@ export default function AccountScreen() {
   return <SafeAreaView style={styles.root}><KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
     <Text accessibilityRole="header" style={styles.title}>Your account</Text>
     {state.status === 'restoring' ? <Text style={styles.text}>Restoring your session…</Text> : state.status === 'signed-in' ?
-      <View key={state.user.id} style={styles.identity}><Text style={styles.text}>{local ? 'Signed in to local QA' : 'Signed in with Google'}</Text>{local ? null : <Text selectable style={styles.text}>{state.user.email || 'Your Google account'}</Text>}</View> :
+      <View key={`identity-${state.user.id}`} style={styles.identity}><Text style={styles.text}>{local ? 'Signed in to local QA' : 'Signed in with Google'}</Text>{local ? null : <Text selectable style={styles.text}>{state.user.email || 'Your Google account'}</Text>}</View> :
       <Text style={styles.text}>{local ? 'Use a private enrollment code from the local fixture helper. You can browse without signing in.' : 'Sign in with your Google account. You can browse our collection without signing in.'}</Text>}
     {loading ? <View accessibilityLiveRegion="polite"><ActivityIndicator color="#535B40" accessibilityLabel="Account loading" /><Text style={styles.text}>{busy ? 'Updating your account…' : 'Please wait…'}</Text></View> : null}
     {message ? <Text accessibilityRole="alert" style={styles.text}>{message}</Text> : null}

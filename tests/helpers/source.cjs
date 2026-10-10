@@ -42,4 +42,16 @@ function find(element, predicate) {
     const result = find(child, predicate); if (result) return result;
   }
 }
-module.exports = { load, hooks, find, native };
+// Mirrors React's dev-mode duplicate key check: keys must be unique within one sibling set.
+function duplicateKeys(element, report = []) {
+  if (!element || typeof element !== 'object') return report;
+  const children = [element.props?.children].flat(Infinity).filter(child => child && typeof child === 'object');
+  const seen = new Set;
+  for (const child of children) {
+    if (child.key != null && seen.has(child.key)) report.push(`${String(element.type)}#${child.key}`);
+    seen.add(child.key);
+  }
+  for (const child of children) duplicateKeys(child, report);
+  return report;
+}
+module.exports = { load, hooks, find, duplicateKeys, native };
