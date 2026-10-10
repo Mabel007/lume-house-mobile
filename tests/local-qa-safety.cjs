@@ -1,6 +1,10 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { localFetch, rollbackContract } = require('../scripts/local-contract-qa.cjs');
+const { localFetch, rollbackContract, requireFixtureRecovery } = require('../scripts/local-contract-qa.cjs');
+test('local QA requires explicit confirmation of existing fixture recovery', () => {
+  for (const args of [[], ['--seed'], ['--restore-latest-confirmed', '--reset']]) assert.throws(() => requireFixtureRecovery(args));
+  assert.doesNotThrow(() => requireFixtureRecovery(['--restore-latest-confirmed']));
+});
 test('local integration fetch refuses hosted, LAN and unrelated local origins before network access', async () => {
   for (const url of ['https://wyvsbzcltrhnjeuijsva.supabase.co/auth/v1/user', 'http://localhost:54321', 'http://127.0.0.1:54322', 'http://192.168.1.2:54321']) {
     await assert.rejects(localFetch(url), /NONLOCAL_REQUEST_REFUSED/);

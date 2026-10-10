@@ -6,6 +6,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { createClient } = require('@supabase/supabase-js');
 const { localBuildConfig } = require('../config/local-build');
+const { restoreLatestConfirmed } = require('./local-fixture-auth.cjs');
 const { load } = require('../tests/helpers/source.cjs');
 const origin = 'http://127.0.0.1:54321';
 const helper = 'http://127.0.0.1:5190';
@@ -74,7 +75,11 @@ select pg_temp.check_it(not exists(select 1 from public.orders where user_id='${
 select pg_temp.check_it(not has_function_privilege('anon','public.load_variant_cart()','EXECUTE'),'Signed-out RPC denial');
 rollback;`;
 }
+function requireFixtureRecovery(args) {
+  if (args.length !== 1 || args[0] !== '--restore-latest-confirmed') throw new Error('Confirmed existing fixture mapping is required.');
+}
 async function run() {
+  requireFixtureRecovery(process.argv.slice(2));
   const clients = []; const passed = [];
   const check = (ok, label) => { assert.ok(ok, label); passed.push(label); console.log(`PASS ${label}`); };
   verifyDatabase();
@@ -83,15 +88,15 @@ async function run() {
   const status = JSON.parse(execFileSync(cli, ['status', '--workdir', path.join(webRoot, '.codex/local-stack'), '-o', 'json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
   assert.equal(status.API_URL, origin);
   assert.ok(localBuildConfig('development', status.API_URL, status.PUBLISHABLE_KEY));
+  const fixtures = restoreLatestConfirmed(cli);
   const before = businessSnapshot();
   try {
     const users = {};
     for (const alias of ['customer-a', 'customer-b', 'admin-a', 'admin-b']) {
-      const response = await localFetch(`${helper}/session`, { method: 'POST', headers: { Origin: 'http://127.0.0.1:5188', 'Content-Type': 'application/json' }, body: JSON.stringify({ role: alias }) });
-      assert.ok(response.ok);
+      const ordinarySession = await fixtures.issueSession(alias);
       const client = createClient(origin, status.PUBLISHABLE_KEY, { auth: { persistSession: false, autoRefreshToken: false }, global: { fetch: localFetch } });
       clients.push(client);
-      const session = await client.auth.setSession(await response.json()); assert.equal(session.error, null);
+      const session = await client.auth.setSession(ordinarySession); assert.equal(session.error, null);
       const verified = await client.auth.getUser(); assert.equal(verified.error, null);
       users[alias] = { client, id: verified.data.user.id };
       check(Boolean(verified.data.user.id), `Existing synthetic ${alias} authenticated locally`);
@@ -124,4 +129,4 @@ async function run() {
   console.log(JSON.stringify({ passed: passed.length, failed: 0, evidence: 'local Auth/API reads + rolled-back SQL; no device/browser synchronization claim' }));
 }
 if (require.main === module) run().catch(() => { console.error('Local contract QA failed; inspect safely before retrying. No raw credentials or database errors printed.'); process.exitCode = 1; });
-module.exports = { localFetch, rollbackContract, verifyDatabase };
+module.exports = { localFetch, rollbackContract, verifyDatabase, requireFixtureRecovery };

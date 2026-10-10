@@ -85,3 +85,24 @@ Existing Supabase is authoritative; web owns backend migrations/admin. Active pr
 Native singleton Auth uses PKCE and unencrypted AsyncStorage with AppState refresh; local sign-out preserves independent web sessions. Preserve owner isolation, mutation UUID reuse and expected-quantity conflicts. Guest Bag, mobile checkout/profile/order features and admin duplication are not implied by the historical HNG scope.
 
 Reports stay local under ignored `.codex/`. Environment/signing/credentials/APK/AAB/recordings stay outside Git. `.env.example`, `app.json`, `eas.json` and legitimate JSON remain trackable. Ignore rules do not remove already tracked files or replace exact staged-file inspection.
+# Existing local fixture enrollment
+
+After the owner confirms the most recent complete synthetic fixture set, run
+`node scripts/local-fixture-auth.cjs --restore-latest-confirmed` with
+`LOCAL_SUPABASE_CLI` pointing to the existing local CLI executable. This local-only
+server recovers existing accounts without signing up users, changing passwords or
+sending email. Server credentials stay in the helper process. It refuses a wrong
+Docker project, gateway, public-key fingerprint or incomplete fixture set.
+
+The existing web sign-in page keeps its exact browser Origin protection. Open
+`http://127.0.0.1:5190/enroll` privately to issue a Customer A/B code, then enter it
+in **Lumé House Dev → Account**. Codes expire after two minutes and work once.
+Native enrollment requires the Development package/callback and approved local
+backend; Production and Staging refuse it. USB QA also needs the loopback mapping
+`adb -s RF8YA0M0ERV reverse tcp:5190 tcp:5190` for this helper. Do not publish codes
+or session values. Never start the older provisioning helper to recover fixtures.
+
+Local rollback contract QA now requires the same explicit mapping confirmation:
+`node scripts/local-contract-qa.cjs --restore-latest-confirmed`. It uses trusted
+local server tooling for ordinary fixture sessions instead of forging a browser
+Origin. Its commerce mutations remain inside a rolled-back transaction.
