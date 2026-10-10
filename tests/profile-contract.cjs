@@ -6,15 +6,20 @@ const { ProfileController } = load('src/features/profile/ProfileController.ts');
 const { loadProfile, saveProfile } = load('src/features/profile/profileRepository.ts');
 const plain = value => JSON.parse(JSON.stringify(value));
 const blank = () => ({ ...profile.emptyProfile });
-test('account identity is keyed per customer and hidden immediately on sign-out', () => {
+test('account dashboard is keyed per customer and hidden immediately on sign-out', () => {
   const { native, find } = require('./helpers/source.cjs');
-  let state = { status: 'signed-in', user: { id: 'a', email: 'a@example.invalid' } };
+  let state = { status: 'signed-in', user: { id: 'a', email: 'a@example.invalid', user_metadata: { full_name: 'Customer A' } } };
   const Screen = load('src/features/auth/AccountScreen.tsx', { react: { useState: value => [value, () => {}] }, 'react-native': native,
-    'expo-router': { Link: 'Link' }, '../profile/CustomerProfile': { CustomerProfile: 'CustomerProfile' }, './localFixtureAuth': { localFixtureAvailable: () => true },
+    'expo-router': { Link: 'Link' }, '../account/AccountDashboard': { AccountDashboard: 'AccountDashboard' }, './localFixtureAuth': { localFixtureAvailable: () => true },
     './AuthContext': { useAuth: () => ({ state, busy: false, message: null }) } }).default;
-  let tree = Screen(); let customer = find(tree, element => element.type === 'CustomerProfile'); assert.equal(customer.key, 'a'); assert.equal(customer.props.email, 'a@example.invalid');
-  state = { status: 'signed-in', user: { id: 'b', email: 'b@example.invalid' } }; customer = find(Screen(), element => element.type === 'CustomerProfile'); assert.equal(customer.key, 'b');
-  state = { status: 'signed-out' }; tree = Screen(); assert.equal(find(tree, element => element.type === 'CustomerProfile'), undefined);
+  let dashboard = find(Screen(), element => element.type === 'AccountDashboard');
+  assert.equal(dashboard.key, 'a'); assert.equal(dashboard.props.userId, 'a'); assert.equal(dashboard.props.accountName, 'Customer A');
+  state = { status: 'signed-in', user: { id: 'b', email: 'b@example.invalid' } }; dashboard = find(Screen(), element => element.type === 'AccountDashboard');
+  assert.equal(dashboard.key, 'b'); assert.equal(dashboard.props.accountName, '');
+  state = { status: 'signed-out' }; const tree = Screen();
+  assert.equal(find(tree, element => element.type === 'AccountDashboard'), undefined, 'sign-out must unmount the private dashboard');
+  assert.equal(find(tree, element => element.props?.children === 'a@example.invalid'), undefined, 'the previous customer email must not remain');
+  assert.equal(find(tree, element => element.props?.children === 'Customer A'), undefined, 'the previous customer name must not remain');
   assert.equal(find(tree, element => element.type === 'KeyboardAvoidingView').props.behavior, 'height');
   assert.equal(find(tree, element => element.type === 'ScrollView').props.keyboardDismissMode, 'on-drag');
 });
@@ -22,7 +27,7 @@ test('account screen renders no duplicate sibling keys in any status', () => {
   const { native, find, duplicateKeys } = require('./helpers/source.cjs');
   let state = { status: 'signed-in', user: { id: 'a', email: 'a@example.invalid' } };
   const Screen = load('src/features/auth/AccountScreen.tsx', { react: { useState: value => [value, () => {}] }, 'react-native': native,
-    'expo-router': { Link: 'Link' }, '../profile/CustomerProfile': { CustomerProfile: 'CustomerProfile' }, './localFixtureAuth': { localFixtureAvailable: () => true },
+    'expo-router': { Link: 'Link' }, '../account/AccountDashboard': { AccountDashboard: 'AccountDashboard' }, './localFixtureAuth': { localFixtureAvailable: () => true },
     './AuthContext': { useAuth: () => ({ state, busy: false, message: 'Loading' }) } }).default;
   for (const next of [
     { status: 'signed-in', user: { id: 'a', email: 'a@example.invalid' } },
@@ -33,28 +38,35 @@ test('account screen renders no duplicate sibling keys in any status', () => {
     state = next; const tree = Screen();
     assert.deepEqual(duplicateKeys(tree), [], `duplicate sibling keys rendering ${next.status} as ${next.user?.id}`);
   }
-  // The identity block and CustomerProfile must stay distinct, while CustomerProfile keeps remounting per customer.
-  state = { status: 'signed-in', user: { id: 'a', email: 'a@example.invalid' } }; const tree = Screen();
-  const identity = find(tree, element => element.type === 'View' && element.key !== null);
-  assert.equal(identity.key, 'identity-a');
-  assert.equal(find(tree, element => element.type === 'CustomerProfile').key, 'a');
-  state = { status: 'signed-in', user: { id: 'b', email: 'b@example.invalid' } };
-  assert.equal(find(Screen(), element => element.type === 'View' && element.key !== null).key, 'identity-b');
+  state = { status: 'signed-out' };
+  assert.deepEqual(duplicateKeys(Screen()), [], 'the local fixture choices must stay uniquely keyed');
 });
 test('delivery UI exposes labelled fields, inline errors, save/cancel and empty states', () => {
   const { hooks, find } = require('./helpers/source.cjs'); const host = hooks(); let snapshot = { status: 'ready', saved: blank(), draft: blank(), errors: { phone: 'Invalid phone' }, message: null };
-  let cancelled = false; const calls = [];
+  let cancelled = false; const calls = []; let editor = null;
   class Controller { getSnapshot = () => snapshot; subscribe = () => () => {}; activate() {} deactivate() {} refresh() {} edit() {} cancel() { cancelled = true; } save = async fields => { calls.push(fields); return false; }; }
-  const Screen = load('src/features/profile/CustomerProfile.tsx', { react: { ...host.react, useEffect: () => {}, useSyncExternalStore: (subscribe, get) => get() },
-    './ProfileController': { ProfileController: Controller }, './profileRepository': {}, '../../lib/supabase/client': {}, '../../components/ActionButton': { ActionButton: 'ActionButton' } }).CustomerProfile;
-  const render = () => { host.begin(); return Screen({ userId: 'a', email: 'synthetic@example.invalid' }); };
-  let tree = render(); assert.ok(find(tree, element => element.props?.children === 'No delivery address saved.'));
+  const Screen = load('src/features/profile/CustomerProfile.tsx', { react: { ...host.react, useSyncExternalStore: (subscribe, get) => get() },
+    '../../components/ActionButton': { ActionButton: 'ActionButton' } }).CustomerProfile;
+  const render = () => { host.begin(); return Screen({ controller: new Controller(), editor, onEditorChange: value => { editor = value; } }); };
+  let tree = render();
+  for (const heading of ['Personal Information', 'Delivery Details']) assert.ok(find(tree, element => element.props?.accessibilityRole === 'header' && element.props.children === heading));
+  assert.ok(find(tree, element => element.props?.children === 'No name saved.'));
+  assert.ok(find(tree, element => element.props?.children === 'No contact phone saved.'));
+  assert.ok(find(tree, element => element.props?.children === 'No delivery address saved.'));
   find(tree, element => element.props?.label === 'Edit delivery details').props.onPress(); tree = render();
+  assert.equal(editor, 'delivery');
   for (const label of ['Delivery contact name', 'Delivery contact phone', 'Street address / landmark', 'Area / community', 'City / town']) assert.ok(find(tree, element => element.type === 'TextInput' && element.props.accessibilityLabel === label));
   assert.equal(find(tree, element => element.props?.accessibilityRole === 'alert').props.children, 'Invalid phone');
   find(tree, element => element.props?.label === 'Save delivery details').props.onPress(); assert.equal(calls[0].length, 5);
-  find(tree, element => element.props?.label === 'Cancel delivery changes').props.onPress(); assert.equal(cancelled, true);
+  find(tree, element => element.props?.label === 'Cancel delivery changes').props.onPress(); assert.equal(cancelled, true); assert.equal(editor, null);
+  // The two editors stay separate: opening one never hides the other summary.
+  editor = 'profile'; tree = render();
+  assert.ok(find(tree, element => element.type === 'TextInput' && element.props.accessibilityLabel === 'Full name'));
+  assert.equal(find(tree, element => element.type === 'TextInput' && element.props.accessibilityLabel === 'City / town'), undefined);
+  assert.ok(find(tree, element => element.props?.label === 'Edit delivery details'), 'delivery summary stays reachable');
+  editor = null;
   snapshot = { ...snapshot, status: 'error', message: 'Please retry' }; tree = render(); assert.ok(find(tree, element => element.props?.label === 'Retry loading details'));
+  host.unmount();
 });
 test('optional profile matches web normalization, nulls and length bounds', () => {
   for (const phone of ['76521208', '076521208', '23276521208', '0023276521208', '+232 (76) 521-208']) assert.equal(profile.normalizePhone(phone), '+23276521208');
@@ -131,29 +143,26 @@ test('delivery defaults share contact fields, allow missing information and reje
   assert.equal(fixture.writes[0][1].default_street_address, 'Synthetic landmark');
   assert.equal(fixture.writes[0][1].phone, '+23276521208');
 });
-function mountEditor(userId, rows, saves) {
+function mountEditor(rows, saves, id = 'a') {
   const { hooks, load } = require('./helpers/source.cjs');
-  const host = hooks(); let controller;
-  class Tracked extends ProfileController { constructor(repository) { super(repository); controller = this; } }
-  const Screen = load('src/features/profile/CustomerProfile.tsx', {
+  const host = hooks(); let editor = null;
+  const controller = new ProfileController({
+    load: async () => profile.mapProfile(rows[id]),
+    save: async (draft, fields) => { saves.push({ id, fields }); return { ...profile.mapProfile(rows[id]), ...Object.fromEntries(fields.map(key => [key, draft[key]])) }; },
+  });
+  const { CustomerProfile } = load('src/features/profile/CustomerProfile.tsx', {
     react: { ...host.react, useSyncExternalStore: (subscribe, get) => get() },
-    './ProfileController': { ProfileController: Tracked },
-    './profileRepository': {
-      loadProfile: async (_client, id) => profile.mapProfile(rows[id]),
-      saveProfile: async (_client, id, draft, fields) => { saves.push({ id, fields }); return { ...profile.mapProfile(rows[id]), ...Object.fromEntries(fields.map(key => [key, draft[key]])) }; },
-    },
-    '../../lib/supabase/client': { getSupabaseClient: () => ({}) },
     '../../components/ActionButton': { ActionButton: 'ActionButton' },
-  }).CustomerProfile;
-  return { host, controller: () => controller, render: () => { host.begin(); return Screen({ userId, email: `${userId}@example.invalid` }); } };
+  });
+  controller.activate();
+  return { host, controller, render: () => { host.begin(); return CustomerProfile({ controller, editor, onEditorChange: value => { editor = value; } }); } };
 }
-const settle = () => new Promise(done => setImmediate(done));
 const row = (id, name) => ({ id, full_name: name, phone: '+23276521208', default_street_address: 'Landmark', default_area: 'Community', default_city: 'Town' });
 test('back leaves a clean editor alone and only confirms meaningful unsaved edits', async () => {
   const { find, events, pressBack, resetEvents } = require('./helpers/source.cjs');
   resetEvents(); const saves = [];
-  const view = mountEditor('a', { a: row('a', 'Customer A') }, saves);
-  view.render(); await settle();
+  const view = mountEditor({ a: row('a', 'Customer A') }, saves);
+  await view.controller.refresh(); view.render();
   assert.equal(pressBack(), false, 'browsing without an open editor must not confirm');
   find(view.render(), element => element.props?.label === 'Edit profile').props.onPress();
   assert.equal(events.back.length, 1);
@@ -170,14 +179,14 @@ test('back leaves a clean editor alone and only confirms meaningful unsaved edit
   assert.deepEqual(plain(buttons.map(button => button.text)), ['Continue editing', 'Discard changes']);
   assert.equal(saves.length, 0, 'back must never silently save or drop data');
   // Continuing editing keeps the draft and the editor open.
-  assert.equal(view.controller().getSnapshot().draft.full_name, 'Customer A editing');
+  assert.equal(view.controller.getSnapshot().draft.full_name, 'Customer A editing');
   assert.ok(find(view.render(), element => element.props.accessibilityLabel === 'Full name'));
   // Discarding restores the last saved values and closes the editor.
   assert.equal(pressBack(), true, 'back keeps confirming while the draft is unsaved');
   assert.equal(events.alerts.length, 2);
   events.alerts[1][2][1].onPress();
   view.render();
-  assert.equal(view.controller().getSnapshot().draft.full_name, 'Customer A');
+  assert.equal(view.controller.getSnapshot().draft.full_name, 'Customer A');
   assert.equal(find(view.render(), element => element.props.accessibilityLabel === 'Full name'), undefined);
   assert.equal(pressBack(), false, 'after discarding, back behaves normally');
   assert.equal(saves.length, 0);
@@ -186,8 +195,8 @@ test('back leaves a clean editor alone and only confirms meaningful unsaved edit
 test('back guard registers one listener, spares keyboard dismissal and detaches on unmount', async () => {
   const { find, events, pressBack, keyDown, resetEvents } = require('./helpers/source.cjs');
   resetEvents(); const saves = [];
-  const view = mountEditor('a', { a: row('a', 'Customer A') }, saves);
-  view.render(); await settle();
+  const view = mountEditor({ a: row('a', 'Customer A') }, saves);
+  await view.controller.refresh(); view.render();
   find(view.render(), element => element.props?.label === 'Edit profile').props.onPress();
   for (let render = 0; render < 4; render++) { view.render(); assert.equal(events.back.length, 1); assert.equal(events.keyboard.length, 2); }
   find(view.render(), element => element.type === 'TextInput' && element.props.accessibilityLabel === 'Full name').props.onChangeText('Draft in progress');
@@ -199,29 +208,35 @@ test('back guard registers one listener, spares keyboard dismissal and detaches 
   keyDown('keyboardDidHide');
   assert.equal(pressBack(), true, 'a dirty editor still confirms once the keyboard is gone');
   assert.equal(events.alerts.length, 1);
-  assert.equal(view.controller().isActive(), true);
+  assert.equal(view.controller.isActive(), true);
   view.host.unmount();
   assert.equal(events.back.length, 0, 'unmount must remove the back listener');
-  assert.equal(view.controller().isActive(), false);
+  assert.equal(events.keyboard.length, 0);
 });
-test('account switching never leaks a draft or a back listener to the next customer', async () => {
+test('signing out one customer leaves no draft and no back listener for the next customer', async () => {
   const { find, events, pressBack, resetEvents } = require('./helpers/source.cjs');
   resetEvents(); const saves = [];
   const rows = { a: row('a', 'Customer A'), b: row('b', 'Customer B') };
-  const first = mountEditor('a', rows, saves);
-  first.render(); await settle();
+  const first = mountEditor(rows, saves, 'a');
+  await first.controller.refresh(); first.render();
   find(first.render(), element => element.props?.label === 'Edit profile').props.onPress();
   find(first.render(), element => element.type === 'TextInput' && element.props.accessibilityLabel === 'Full name').props.onChangeText('Private customer A draft');
-  first.render(); assert.equal(pressBack(), true);
-  first.host.unmount(); resetEvents();
-  assert.equal(first.controller().getSnapshot().draft.full_name, '', 'sign-out must erase the private draft');
-  const second = mountEditor('b', rows, saves);
-  second.render(); await settle();
-  assert.equal(events.back.length, 1, 'the previous screen must not leave a second listener');
-  assert.equal(pressBack(), false);
+  first.render();
+  assert.equal(pressBack(), true, 'the outgoing customer is protected from losing the draft');
+  // Signing out tears down the owner guard and the screen in that order.
+  first.controller.deactivate(); first.host.unmount();
+  assert.equal(events.back.length, 0, 'a signed-out screen must not leave a back listener behind');
+  assert.equal(events.keyboard.length, 0, 'and no keyboard listeners either');
+  assert.equal(first.controller.isActive(), false);
+  assert.equal(first.controller.getSnapshot().draft.full_name, '', 'sign-out erases the private draft');
+  resetEvents();
+  const second = mountEditor(rows, saves, 'b');
+  await second.controller.refresh(); second.render();
+  assert.equal(events.back.length, 1, 'the next customer mounts exactly one back guard');
+  assert.equal(pressBack(), false, 'the next customer starts clean and must not be asked to discard');
   find(second.render(), element => element.props?.label === 'Edit profile').props.onPress();
   assert.equal(find(second.render(), element => element.type === 'TextInput' && element.props.accessibilityLabel === 'Full name').props.value, 'Customer B');
-  assert.equal(events.alerts.length, 0);
+  assert.equal(events.alerts.length, 0, 'no discard prompt may carry over from the previous account');
   second.host.unmount();
 });
 test('whitespace-only edits are not treated as unsaved changes', () => {

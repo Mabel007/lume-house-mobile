@@ -1,26 +1,29 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const test = require('node:test');
-const { load, hooks, find, native } = require('./helpers/source.cjs');
+const { load, hooks, find, expand, native } = require('./helpers/source.cjs');
 test('Account restoration hides auth actions; signed-out/in actions have labels and preserve existing handlers', () => {
   let state = { status: 'restoring' }; let busy = false; const actions = [];
   const Screen = load('src/features/auth/AccountScreen.tsx', {
-    '../profile/CustomerProfile': { CustomerProfile: 'CustomerProfile' },
-    react: { useState: value => [value, () => {}] }, './localFixtureAuth': { localFixtureAvailable: () => false },
+    react: { useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}], useEffect: () => {}, useRef: value => ({ current: value }), useSyncExternalStore: (subscribe, get) => get() },
+    '../profile/CustomerProfile': { CustomerProfile: 'CustomerProfile' }, '../../lib/supabase/client': { getSupabaseClient: () => ({}) },
+    './localFixtureAuth': { localFixtureAvailable: () => false },
     'expo-router': { Link: 'Link' }, './AuthContext': { useAuth: () => ({ state, busy, message: null,
       signIn: async () => { actions.push('in'); }, signOut: async () => { actions.push('out'); } }) },
   }).default;
-  assert.equal(find(Screen(), element => element.props?.accessibilityRole === 'button'), undefined);
-  assert.equal(find(Screen(), element => element.type === 'ActivityIndicator').props.accessibilityLabel, 'Account loading');
-  state = { status: 'signed-out' }; let button = find(Screen(), element => element.props?.accessibilityRole === 'button');
+  const view = () => expand(Screen());
+  assert.equal(find(view(), element => element.props?.accessibilityRole === 'button'), undefined);
+  assert.equal(find(view(), element => element.type === 'ActivityIndicator').props.accessibilityLabel, 'Account loading');
+  state = { status: 'signed-out' }; let button = find(view(), element => element.props?.accessibilityRole === 'button');
   assert.equal(button.props.accessibilityLabel, 'Continue with Google'); button.props.onPress();
   state = { status: 'signed-in', user: { id: 'actual-user', email: 'fixture@example.invalid' } };
-  button = find(Screen(), element => element.props?.accessibilityRole === 'button');
-  assert.equal(button.props.accessibilityLabel, 'Sign out of your account'); button.props.onPress();
+  const row = () => find(view(), element => element.props?.accessibilityLabel === 'Sign out of your account');
+  assert.equal(row().props.accessibilityRole, 'button'); row().props.onPress();
   assert.deepEqual(actions, ['in', 'out']); busy = true;
-  assert.equal(find(Screen(), element => element.props?.accessibilityRole === 'button').props.accessibilityState.busy, true);
-  assert.ok(find(Screen(), element => element.type === 'Link' && element.props.href === '/'));
-  assert.ok(find(Screen(), element => element.type === 'Link' && element.props.href === '/bag'));
+  assert.equal(row().props.accessibilityState.busy, true);
+  assert.equal(find(view(), element => element.type === 'CustomerProfile').props.editor, null, 'the profile area stays mounted and closed');
+  assert.ok(find(view(), element => element.type === 'Link' && element.props.href === '/'));
+  assert.ok(find(view(), element => element.type === 'Link' && element.props.href === '/bag'));
 });
 function bagScreen() {
   const host = hooks(); let signedIn = false; let state = { status: 'ready', items: [{ variantId: 'previous-user', quantity: 1 }] };

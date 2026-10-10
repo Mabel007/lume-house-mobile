@@ -7,8 +7,9 @@ const native = Object.fromEntries(['View', 'Text', 'Pressable', 'FlatList', 'Scr
 native.Platform = { OS: 'android' };
 native.StyleSheet = { create: value => value };
 native.useWindowDimensions = () => ({ width: 400, fontScale: 1 });
-const events = { back: [], keyboard: [], alerts: [], dismissed: 0 };
+const events = { back: [], keyboard: [], alerts: [], dismissed: 0, links: [] };
 function remove(list, entry) { const at = list.indexOf(entry); if (at >= 0) list.splice(at, 1); }
+const webBrowser = { openBrowserAsync: url => { events.links.push(url); return Promise.resolve(); } };
 native.BackHandler = { addEventListener: (type, listener) => {
   if (type !== 'hardwareBackPress') throw new Error(`Unexpected back event: ${type}`);
   events.back.push(listener);
@@ -23,7 +24,7 @@ function pressBack() {
 }
 function keyDown(type) { events.keyboard.filter(entry => entry.type === type).forEach(entry => entry.listener()); }
 // Clears recorded interactions only; live listener registrations follow component mount/unmount.
-function resetEvents() { events.alerts = []; events.dismissed = 0; }
+function resetEvents() { events.alerts = []; events.dismissed = 0; events.links = []; }
 function load(file, overrides = {}) {
   const fixture = { exports: {} };
   const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: {
@@ -33,6 +34,7 @@ function load(file, overrides = {}) {
     if (Object.hasOwn(overrides, name)) return overrides[name];
     if (name === 'react/jsx-runtime') return require('react/jsx-runtime');
     if (name === 'react-native') return native;
+    if (name === 'expo-web-browser') return webBrowser;
     if (name === 'react-native-safe-area-context') return { SafeAreaView: 'SafeAreaView' };
     if (!name.startsWith('.')) throw new Error(`Unmocked dependency: ${name}`);
     const base = path.resolve(path.dirname(file), name);
@@ -69,6 +71,15 @@ function find(element, predicate) {
     const result = find(child, predicate); if (result) return result;
   }
 }
+// Renders nested function components so assertions can inspect their output.
+function expand(element) {
+  if (!element || typeof element !== 'object') return element;
+  if (typeof element.type === 'function') return expand(element.type(element.props));
+  if (element.props?.children === undefined) return element;
+  const children = [element.props.children].flat(Infinity).map(expand);
+  // Keep a single child single, so text predicates keep matching the real tree shape.
+  return { ...element, props: { ...element.props, children: Array.isArray(element.props.children) ? children : children[0] ?? element.props.children } };
+}
 // Mirrors React's dev-mode duplicate key check: keys must be unique within one sibling set.
 function duplicateKeys(element, report = []) {
   if (!element || typeof element !== 'object') return report;
@@ -81,4 +92,4 @@ function duplicateKeys(element, report = []) {
   for (const child of children) duplicateKeys(child, report);
   return report;
 }
-module.exports = { load, hooks, find, duplicateKeys, native, events, pressBack, keyDown, resetEvents };
+module.exports = { load, hooks, find, expand, duplicateKeys, native, events, pressBack, keyDown, resetEvents };

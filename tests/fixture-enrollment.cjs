@@ -79,7 +79,7 @@ test('mobile verifies ordinary local session before standard setSession and reje
 });
 test('local Account hides Google/PII, masks and clears enrollment, and exposes labelled customer choices', () => {
   const host = hooks(); const calls = [];
-  const Screen = load('src/features/auth/AccountScreen.tsx', { '../profile/CustomerProfile': { CustomerProfile: 'CustomerProfile' }, react: host.react, 'expo-router': { Link: 'Link' }, './localFixtureAuth': { localFixtureAvailable: () => true }, './AuthContext': { useAuth: () => ({ state: { status: 'signed-out' }, busy: false, message: null, signInFixture: (...args) => { calls.push(args); } }) } }).default;
+  const Screen = load('src/features/auth/AccountScreen.tsx', { '../account/AccountDashboard': { AccountDashboard: 'AccountDashboard' }, react: host.react, 'expo-router': { Link: 'Link' }, './localFixtureAuth': { localFixtureAvailable: () => true }, './AuthContext': { useAuth: () => ({ state: { status: 'signed-out' }, busy: false, message: null, signInFixture: (...args) => { calls.push(args); } }) } }).default;
   host.begin(); let tree = Screen();
   assert.equal(find(tree, element => element.props?.accessibilityLabel === 'Continue with Google'), undefined);
   let input = find(tree, element => element.props?.accessibilityLabel === 'Private enrollment code'); assert.equal(input.props.secureTextEntry, true);
