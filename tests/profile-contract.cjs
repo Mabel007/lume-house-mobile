@@ -72,3 +72,12 @@ test('repository saves partial fields, handles insert race and requires returned
   await assert.rejects(saveProfile(denied.api, 'a', blank(), ['full_name'], () => true));
   const fixture = client(); assert.equal((await loadProfile(fixture.api, 'a', () => true)).full_name, 'A');
 });
+test('delivery defaults share contact fields, allow missing information and reject malformed inputs', async () => {
+  const draft = { ...blank(), full_name: 'Synthetic customer', phone: '076521208', default_street_address: ' Synthetic landmark ', default_area: 'Community', default_city: 'Town' };
+  assert.deepEqual(plain(profile.profileValues(draft, profile.profileFields)), { ...draft, phone: '+23276521208', default_street_address: 'Synthetic landmark' });
+  assert.equal(profile.profileValues(blank(), profile.profileFields).default_city, null);
+  assert.throws(() => profile.profileValues({ ...draft, default_area: 'a'.repeat(201) }, profile.profileFields));
+  const fixture = client(); await saveProfile(fixture.api, 'a', draft, profile.profileFields, () => true);
+  assert.equal(fixture.writes[0][1].default_street_address, 'Synthetic landmark');
+  assert.equal(fixture.writes[0][1].phone, '+23276521208');
+});
