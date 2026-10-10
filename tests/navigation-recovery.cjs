@@ -5,6 +5,7 @@ const { load, hooks, find, native } = require('./helpers/source.cjs');
 test('Account restoration hides auth actions; signed-out/in actions have labels and preserve existing handlers', () => {
   let state = { status: 'restoring' }; let busy = false; const actions = [];
   const Screen = load('src/features/auth/AccountScreen.tsx', {
+    '../profile/CustomerProfile': { CustomerProfile: 'CustomerProfile' },
     react: { useState: value => [value, () => {}] }, './localFixtureAuth': { localFixtureAvailable: () => false },
     'expo-router': { Link: 'Link' }, './AuthContext': { useAuth: () => ({ state, busy, message: null,
       signIn: async () => { actions.push('in'); }, signOut: async () => { actions.push('out'); } }) },

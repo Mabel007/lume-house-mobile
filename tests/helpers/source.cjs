@@ -3,7 +3,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const ts = require('typescript');
-const native = Object.fromEntries(['View', 'Text', 'Pressable', 'FlatList', 'ScrollView', 'TextInput', 'ActivityIndicator'].map(name => [name, name]));
+const native = Object.fromEntries(['View', 'Text', 'Pressable', 'FlatList', 'ScrollView', 'TextInput', 'ActivityIndicator', 'KeyboardAvoidingView'].map(name => [name, name]));
+native.Platform = { OS: 'android' };
 native.StyleSheet = { create: value => value };
 native.useWindowDimensions = () => ({ width: 400, fontScale: 1 });
 function load(file, overrides = {}) {
