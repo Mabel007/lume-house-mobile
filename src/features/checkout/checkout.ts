@@ -87,8 +87,19 @@ export function checkoutErrors(draft: CheckoutDraft): Partial<Record<CheckoutFie
   return errors;
 }
 
-export type EstimatedLine = { available: boolean; lineTotal: number | null };
-export type CheckoutLine = EstimatedLine & { key: string; label: string; quantity: number };
+export type TouchedFields = Partial<Record<CheckoutField, boolean>>;
+
+// checkoutErrors stays the complete validator the submission seam will use; a form only reports on a field the customer has entered and left.
+export function shownErrors(errors: Partial<Record<CheckoutField, string>>, touched: TouchedFields): Partial<Record<CheckoutField, string>> {
+  const visible: Partial<Record<CheckoutField, string>> = {};
+  for (const key of Object.keys(errors) as CheckoutField[]) {
+    const message = errors[key];
+    if (message && touched[key]) visible[key] = message;
+  }
+  return visible;
+}
+
+export type EstimatedLine = { available: boolean; lineTotal: number | null };export type CheckoutLine = EstimatedLine & { key: string; label: string; quantity: number };
 export type Estimate = { subtotal: number | null; fee: number | null; total: number | null; complete: boolean };
 
 // An estimate for review only. place_variant_order recomputes every figure from locked database rows.

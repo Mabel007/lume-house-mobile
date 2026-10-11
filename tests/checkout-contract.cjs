@@ -1,7 +1,7 @@
 // Offline contracts only: every repository and context is mocked. No client, network, order, payment or email.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { load, hooks, find, expand, duplicateKeys, events, pressBack, keyDown, resetEvents } = require('./helpers/source.cjs');
+const { load, hooks, find, expand, duplicateKeys, attachRefs, events, pressBack, keyDown, resetEvents } = require('./helpers/source.cjs');
 
 const { deliveryConfig, getDeliveryFee } = load('src/config/fulfilment.ts');
 const checkout = load('src/features/checkout/checkout.ts');
@@ -70,6 +70,16 @@ test('validation mirrors the placement rules without inventing provider checks',
   assert.equal(checkout.checkoutErrors(draft({ ...complete, full_name: 'x'.repeat(201) })).full_name, 'Please keep this field within 200 characters.');
   assert.equal(checkout.checkoutErrors(draft({ ...complete, instructions: 'x'.repeat(501) })).instructions, 'Please keep delivery instructions within 500 characters.');
   assert.deepEqual(plain(checkout.checkoutErrors(draft({ ...complete, instructions: 'x'.repeat(500) }))), {});
+});
+
+test('a field only reports once the customer has visited it', () => {
+  const missing = checkout.checkoutErrors(draft({}));
+  assert.deepEqual(plain(checkout.shownErrors(missing, {})), {}, 'an untouched draft shows no error at all');
+  assert.deepEqual(plain(checkout.shownErrors(missing, { full_name: true })), { full_name: missing.full_name });
+  assert.deepEqual(plain(checkout.shownErrors(missing, { full_name: true, contact_phone: true })),
+    { full_name: missing.full_name, contact_phone: missing.contact_phone });
+  assert.deepEqual(plain(checkout.shownErrors({}, { full_name: true })), {}, 'a valid field has nothing to report');
+  assert.deepEqual(plain(checkout.shownErrors(missing, { full_name: false })), {}, 'visiting is remembered as a boolean, not as a string');
 });
 
 test('the reuse switch makes the contact number the payment number', () => {
@@ -290,26 +300,32 @@ test('pickup hides the delivery editors and delivery zones state their provision
   view.host.unmount();
 });
 
-test('invalid checkout fields are announced where the mistake was made', async () => {
+const fieldAlerts = tree => collect(tree, element => element.props?.accessibilityRole === 'alert')
+  .map(textOf).filter(text => !text.startsWith('Order placement is not available'));
+
+test('an untouched form stays quiet and a field reports only once the customer has left it', async () => {
   const view = mountScreen({ auth: readyAuth, bag: readyBag(oneItem), catalogue: readyCatalogue });
   view.render();
   await view.settle();
+  assert.deepEqual(fieldAlerts(view.tree), [], 'nobody has filled this in yet, so nothing is red');
+  assert.equal(inputLabeled(view.tree, 'Full name *').props.accessibilityHint, 'Required for your order.', 'the hint is help, not a complaint');
   assert.equal(inputLabeled(view.tree, 'Email *').props.value, 'customer-a@example.invalid', 'the account email is a starting point, not an error');
-  assert.equal(inputLabeled(view.tree, 'Email *').props.accessibilityHint, 'Where your order confirmation is sent.');
+  inputLabeled(view.tree, 'Full name *').props.onBlur();
+  await view.settle();
   assert.equal(inputLabeled(view.tree, 'Full name *').props.accessibilityHint, 'Enter your full name.', 'the hint carries the live error to the field');
-  assert.equal(inputLabeled(view.tree, 'Phone number *').props.accessibilityHint, 'Enter a Sierra Leone phone number, for example +23276521208.');
-  const alerts = collect(view.tree, element => element.props?.accessibilityRole === 'alert').map(element => textOf(element));
-  assert.ok(alerts.includes('Choose a supported Freetown delivery zone.'));
-  assert.ok(alerts.includes('Enter a Sierra Leone phone number, for example +23276521208.'));
-  assert.equal(inputLabeled(view.tree, 'City / town *').props.accessibilityHint, 'Enter your city or town.');
+  assert.deepEqual(fieldAlerts(view.tree), ['Enter your full name.'], 'only the field the customer visited reports');
+  assert.equal(inputLabeled(view.tree, 'City / town *').props.accessibilityHint, 'Delivery is currently limited to Freetown.',
+    'an unvisited field keeps its help text');
   inputLabeled(view.tree, 'City / town *').props.onChangeText('Bo');
+  inputLabeled(view.tree, 'City / town *').props.onBlur();
   await view.settle();
   assert.equal(inputLabeled(view.tree, 'City / town *').props.accessibilityHint, 'Delivery is currently limited to Freetown.');
-  assert.ok(collect(view.tree, element => element.props?.accessibilityRole === 'alert').map(element => textOf(element)).includes('Delivery is currently limited to Freetown.'));
+  assert.ok(fieldAlerts(view.tree).includes('Delivery is currently limited to Freetown.'));
   inputLabeled(view.tree, 'City / town *').props.onChangeText('Freetown');
   zones(view).props.onPress();
   await view.settle();
-  assert.ok(!collect(view.tree, element => element.props?.accessibilityRole === 'alert').map(element => textOf(element)).includes('Delivery is currently limited to Freetown.'), 'leaving the service area re-clears the notice');
+  assert.ok(!fieldAlerts(view.tree).includes('Choose a supported Freetown delivery zone.'), 'choosing a zone settles the zone question');
+  assert.ok(!fieldAlerts(view.tree).includes('Delivery is currently limited to Freetown.'), 'leaving the service area re-clears the notice');
   view.host.unmount();
 });
 function zones(view) {
@@ -340,6 +356,42 @@ test('Android back hides the keyboard first, then confirms before discarding che
   buttons[1].onPress();
   assert.deepEqual(view.backs, ['back']);
   assert.equal(pressBack(), false, 'a discarded draft does not ask twice');
+  view.host.unmount();
+});
+
+test('checkout moves the view only when the customer asks it to', async () => {
+  const view = mountScreen({ auth: readyAuth, bag: readyBag(oneItem), catalogue: readyCatalogue });
+  view.render();
+  await view.settle();
+  resetEvents();
+  const nodes = attachRefs(view.tree);
+  const scroller = nodes.find(node => Object.hasOwn(node.props, 'scrollEventThrottle'));
+  const deliveryGroup = nodes.find(node => Object.hasOwn(node.props, 'onLayout') && node !== scroller);
+  const phone = nodes.find(node => node.props?.accessibilityLabel === 'Phone number *');
+  const asked = [];
+  scroller.scrollTo = options => asked.push(options);
+  for (const node of [deliveryGroup, phone]) node.measureLayout = (anchor, success) => success(0, 1900, 800, 60);
+  scroller.props.onLayout({ nativeEvent: { layout: { height: 1600 } } });
+  assert.equal(asked.length, 0, 'measuring the viewport never moves the view');
+  deliveryGroup.props.onLayout();
+  assert.equal(asked.length, 0, 'arriving at checkout never scrolls to the delivery editors');
+  radio(view.tree, 'Pickup').props.onPress();
+  await view.settle();
+  radio(view.tree, 'Delivery').props.onPress();
+  await view.settle();
+  deliveryGroup.props.onLayout();
+  assert.equal(asked.length, 1, 'choosing Delivery opens the editors that just appeared');
+  deliveryGroup.props.onLayout();
+  assert.equal(asked.length, 1, 'a later re-layout of the same editors does not move the view again');
+  phone.props.onFocus();
+  assert.ok(asked.length > 1, 'a focused field is brought into the visible band');
+  keyDown('keyboardDidShow', { endCoordinates: { height: 620 } });
+  view.render();
+  const whileTyping = asked.length;
+  keyDown('keyboardDidHide', {});
+  view.render();
+  scroller.props.onContentSizeChange();
+  assert.equal(asked.length, whileTyping, 'a finished field is not chased when unrelated content changes');
   view.host.unmount();
 });
 
@@ -388,6 +440,7 @@ test('mobile money is collected as settlement detail only, with reuse clearing i
   assert.equal(providers[0].props.accessibilityState.checked, true, 'the web default provider is also the mobile default');
   assert.match(textOf(view.tree), /No payment is collected here/i, 'no provider is presented as operational');
   inputLabeled(view.tree, 'Mobile money number *').props.onChangeText('12345');
+  inputLabeled(view.tree, 'Mobile money number *').props.onBlur();
   await view.settle();
   assert.match(inputLabeled(view.tree, 'Mobile money number *').props.accessibilityHint, /Enter a Sierra Leone mobile number/);
   const reuse = find(view.tree, element => element.props?.accessibilityRole === 'checkbox');

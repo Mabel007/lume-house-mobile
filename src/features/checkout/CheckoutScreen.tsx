@@ -13,7 +13,7 @@ import { loadProfile } from '../profile/profileRepository';
 import { getSupabaseClient } from '../../lib/supabase/client';
 import { CheckoutDetails } from './CheckoutDetails';
 import { CheckoutPayment } from './CheckoutPayment';
-import { checkoutErrors, deliveryFee, deliveryNotice, emptyCheckout, prefillDefaults, type CheckoutDraft, type CheckoutLine } from './checkout';
+import { checkoutErrors, deliveryFee, deliveryNotice, emptyCheckout, prefillDefaults, shownErrors, type CheckoutDraft, type CheckoutField, type CheckoutLine, type TouchedFields } from './checkout';
 
 export default function CheckoutScreen() {
   const { state: auth, busy: authBusy } = useAuth();
@@ -34,7 +34,7 @@ export default function CheckoutScreen() {
     // Android overlays the keyboard instead of resizing the window, so the scroll view owns the inset.
     if (Platform.OS === 'ios') return;
     const shown = Keyboard.addListener('keyboardDidShow', event => { const height = event.endCoordinates?.height ?? 0; frame.current.keyboard = height; setImeHeight(height); });
-    const hidden = Keyboard.addListener('keyboardDidHide', () => { frame.current.keyboard = 0; setImeHeight(0); });
+    const hidden = Keyboard.addListener('keyboardDidHide', () => { frame.current.keyboard = 0; setImeHeight(0); focused.current = null; });
     return () => { shown.remove(); hidden.remove(); };
   }, []);
   const user = auth.status === 'signed-in' ? auth.user : undefined;
@@ -91,6 +91,7 @@ export default function CheckoutScreen() {
 function CheckoutFlow({ userId, email, busy, pieces, reveal }: { userId: string; email: string; busy: boolean; pieces: readonly CheckoutLine[]; reveal: FieldReveal }) {
   const [draft, setDraft] = useState<CheckoutDraft>(emptyCheckout);
   const [saved, setSaved] = useState<Profile | null>(null);
+  const [touched, setTouched] = useState<TouchedFields>({});
   const dirty = useRef(false);
   const keyboardOpen = useRef(false);
   const backPress = useRef<() => boolean>(() => false);
@@ -120,11 +121,13 @@ function CheckoutFlow({ userId, email, busy, pieces, reveal }: { userId: string;
       return true;
     };
   });
-  const errors = checkoutErrors(draft);
+  const errors = shownErrors(checkoutErrors(draft), touched);
   const change = (changes: Partial<CheckoutDraft>) => { dirty.current = true; setDraft(current => ({ ...current, ...changes })); };
+  // A field only reports once the customer has entered it and moved on, so an untouched form never reads as a wall of errors.
+  const touch = (field: CheckoutField) => setTouched(current => current[field] ? current : { ...current, [field]: true });
   return <>
-    <CheckoutDetails draft={draft} errors={errors} notice={deliveryNotice(draft)} busy={busy} revealField={reveal} onChange={change} />
-    <CheckoutPayment draft={draft} errors={errors} lines={pieces} fee={deliveryFee(draft)} busy={busy} revealField={reveal} onChange={change} />
+    <CheckoutDetails draft={draft} errors={errors} notice={deliveryNotice(draft)} busy={busy} revealField={reveal} onChange={change} onTouch={touch} />
+    <CheckoutPayment draft={draft} errors={errors} lines={pieces} fee={deliveryFee(draft)} busy={busy} revealField={reveal} onChange={change} onTouch={touch} />
   </>;
 }
 

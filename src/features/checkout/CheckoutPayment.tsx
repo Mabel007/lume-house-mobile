@@ -12,12 +12,13 @@ type Props = {
   fee: number | null;
   busy: boolean;
   onChange: (changes: Partial<CheckoutDraft>) => void;
+  onTouch: (field: CheckoutField) => void;
   revealField: FieldReveal;
 };
 
 const money = (value: number | null) => value === null ? 'Not priced yet' : formatMoney(value);
 
-export function CheckoutPayment({ draft, errors, lines, fee, busy, onChange, revealField }: Props) {
+export function CheckoutPayment({ draft, errors, lines, fee, busy, onChange, onTouch, revealField }: Props) {
   const input = useRef<TextInput | null>(null);
   const reveal = useRef(revealField);
   useEffect(() => { reveal.current = revealField; });
@@ -44,6 +45,7 @@ export function CheckoutPayment({ draft, errors, lines, fee, busy, onChange, rev
         accessibilityHint={error || 'Number format only; this does not verify registration with the selected provider.'}
         value={paymentPhone(draft)}
         onChangeText={value => onChange({ payment_phone: value })} onFocus={() => reveal.current(input.current ?? null)}
+        onBlur={() => onTouch('payment_phone')}
         editable={!busy && !draft.reuse_phone}
         keyboardType="phone-pad" autoComplete="tel" autoCapitalize="none" maxLength={maximumFieldLength}
         style={[styles.input, draft.reuse_phone && styles.mirrored]} />
