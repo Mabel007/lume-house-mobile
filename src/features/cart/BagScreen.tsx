@@ -75,6 +75,7 @@ export default function BagScreen() {
       ListFooterComponent={items.length ? <View style={styles.summary}>
         {completePrices ? <Text style={styles.name}>Subtotal {formatMoney(subtotal)}</Text> : <Text style={styles.text}>Subtotal is unavailable until current selections are available.</Text>}
         <Text style={styles.text}>Current prices are shown. Refresh after making changes on the web.</Text>
+        <Link href="/checkout" asChild><Pressable accessibilityRole="link" style={styles.link}><Text style={styles.checkout}>Continue to checkout</Text></Pressable></Link>
       </View> : null} />
   </SafeAreaView>;
 }
@@ -88,4 +89,5 @@ const styles = StyleSheet.create({
   signIn: { minHeight: 48, borderRadius: 8, padding: 16, backgroundColor: '#535B40', alignItems: 'center' },
   signInText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' }, progress: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'center' },
   empty: { fontSize: 17, lineHeight: 26, color: '#423F38', paddingVertical: 24 }, summary: { paddingVertical: 24, gap: 12 },
+  checkout: { fontSize: 17, lineHeight: 25, color: '#535B40', fontWeight: '600' },
 });
