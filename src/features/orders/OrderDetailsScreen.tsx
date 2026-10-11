@@ -9,6 +9,7 @@ import { emailCopy, moneyAt, orderDateTime, orderLabel, type OrderDetail } from 
 import { emailStates, type EmailStatus } from '../checkout/order';
 import { paymentProviders } from '../checkout/checkout';
 import { checkConfirmation, loadOrder } from './orderRepository';
+import { CancellationPanel } from './CancellationPanel';
 
 const identifier = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const money = (value: number) => moneyAt(value);
@@ -121,6 +122,7 @@ export default function OrderDetailsScreen() {
       <Total label={pickup ? 'Pickup' : 'Delivery'} value={money(order.fee)} />
       <Total label="Total" value={money(order.total)} strong />
     </Section>
+    <CancellationPanel userId={userId} order={order} />
     <Section title="Confirmation email">
       <Text accessible accessibilityLiveRegion="polite" style={styles.text}>{emailState.status ? emailCopy[emailState.status] : 'The confirmation email status for this order has not been checked on this device.'}</Text>
       {!emailBusy && emailState.message ? <Text accessible accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.text}>{emailState.message}</Text> : null}

@@ -9,7 +9,7 @@ const detailColumns = `${summaryColumns},full_name,customer_email,customer_phone
   'delivery_city,delivery_zone_label,delivery_instructions,pickup_location,payment_provider,payment_phone_last4,' +
   'subtotal_cents,delivery_fee_cents,order_items(product_name,quantity,unit_price_cents,variant_id,variant_sku,variant_options,variant_currency)';
 
-async function requireOwner(client: SupabaseClient, userId: string, active: () => boolean) {
+export async function requireOwner(client: SupabaseClient, userId: string, active: () => boolean) {
   const { data, error } = await client.auth.getUser();
   if (error || data.user?.id !== userId || !active()) throw new Error('Please sign in again to view your orders.');
   return data.user.id;

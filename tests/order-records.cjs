@@ -237,6 +237,8 @@ function mountDetails({ params = {}, auth = { status: 'signed-in', user: { id: '
       router: { canGoBack: () => true, back: () => view.calls.routes.push('back'), replace: route => view.calls.routes.push(route) } },
     '../../lib/supabase/client': { getSupabaseClient: () => ({}) },
     '../auth/AuthContext': { useAuth: () => ({ state: view.authState, busy: false }) },
+    // The cancellation panel is a screen of its own contract, tested in order-cancellation.cjs.
+    './CancellationPanel': { CancellationPanel: () => null },
     // The screen is tested against the read contract, not a live session: nothing here reaches Supabase.
     './orderRepository': {
       loadOrder: async (client, userId, orderId, active) => { view.calls.loads.push({ userId, orderId, active: typeof active }); return orderLoad(userId, orderId); },
