@@ -8,8 +8,9 @@ import { CustomerProfile } from '../profile/CustomerProfile';
 import { ProfileController } from '../profile/ProfileController';
 import { loadProfile, saveProfile } from '../profile/profileRepository';
 import { getSupabaseClient } from '../../lib/supabase/client';
+import type { FieldReveal } from '../../lib/scrollReveal';
 
-type Props = { userId: string; email: string | undefined; accountName: string; local: boolean; busy: boolean; onSignOut: () => void };
+type Props = { userId: string; email: string | undefined; accountName: string; local: boolean; busy: boolean; revealField: FieldReveal; onSignOut: () => void };
 
 const helpPages = [
   { title: 'Help & Contact', path: '/help' },
@@ -17,7 +18,7 @@ const helpPages = [
   { title: 'Returns & Refunds', path: '/help/returns-refunds' },
 ];
 
-export function AccountDashboard({ userId, email, accountName, local, busy, onSignOut }: Props) {
+export function AccountDashboard({ userId, email, accountName, local, busy, revealField, onSignOut }: Props) {
   const [controller] = useState(() => {
     const instance: ProfileController = new ProfileController({
       load: () => loadProfile(getSupabaseClient(), userId, instance.isActive),
@@ -64,7 +65,7 @@ export function AccountDashboard({ userId, email, accountName, local, busy, onSi
       </Pressable>)}
       {linkStatus ? <Text accessibilityRole="alert" style={styles.text}>{linkStatus}</Text> : null}
     </View> : null}
-    <CustomerProfile controller={controller} editor={editor} onEditorChange={next => setSection(next)} />
+    <CustomerProfile controller={controller} editor={editor} revealField={revealField} onEditorChange={next => setSection(next)} />
   </View>;
 }
 

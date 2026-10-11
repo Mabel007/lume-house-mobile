@@ -9,7 +9,7 @@ const blank = () => ({ ...profile.emptyProfile });
 test('account dashboard is keyed per customer and hidden immediately on sign-out', () => {
   const { native, find } = require('./helpers/source.cjs');
   let state = { status: 'signed-in', user: { id: 'a', email: 'a@example.invalid', user_metadata: { full_name: 'Customer A' } } };
-  const Screen = load('src/features/auth/AccountScreen.tsx', { react: { useState: value => [value, () => {}] }, 'react-native': native,
+  const Screen = load('src/features/auth/AccountScreen.tsx', { react: { useState: value => [value, () => {}], useRef: value => ({ current: value }), useEffect: () => {} }, 'react-native': native,
     'expo-router': { Link: 'Link' }, '../account/AccountDashboard': { AccountDashboard: 'AccountDashboard' }, './localFixtureAuth': { localFixtureAvailable: () => true },
     './AuthContext': { useAuth: () => ({ state, busy: false, message: null }) } }).default;
   let dashboard = find(Screen(), element => element.type === 'AccountDashboard');
@@ -20,13 +20,13 @@ test('account dashboard is keyed per customer and hidden immediately on sign-out
   assert.equal(find(tree, element => element.type === 'AccountDashboard'), undefined, 'sign-out must unmount the private dashboard');
   assert.equal(find(tree, element => element.props?.children === 'a@example.invalid'), undefined, 'the previous customer email must not remain');
   assert.equal(find(tree, element => element.props?.children === 'Customer A'), undefined, 'the previous customer name must not remain');
-  assert.equal(find(tree, element => element.type === 'KeyboardAvoidingView').props.behavior, 'height');
+  assert.equal(find(tree, element => element.type === 'KeyboardAvoidingView').props.behavior, undefined, 'Android overlays the keyboard, so the avoiding view must not double-count the inset');
   assert.equal(find(tree, element => element.type === 'ScrollView').props.keyboardDismissMode, 'on-drag');
 });
 test('account screen renders no duplicate sibling keys in any status', () => {
   const { native, find, duplicateKeys } = require('./helpers/source.cjs');
   let state = { status: 'signed-in', user: { id: 'a', email: 'a@example.invalid' } };
-  const Screen = load('src/features/auth/AccountScreen.tsx', { react: { useState: value => [value, () => {}] }, 'react-native': native,
+  const Screen = load('src/features/auth/AccountScreen.tsx', { react: { useState: value => [value, () => {}], useRef: value => ({ current: value }), useEffect: () => {} }, 'react-native': native,
     'expo-router': { Link: 'Link' }, '../account/AccountDashboard': { AccountDashboard: 'AccountDashboard' }, './localFixtureAuth': { localFixtureAvailable: () => true },
     './AuthContext': { useAuth: () => ({ state, busy: false, message: 'Loading' }) } }).default;
   for (const next of [
@@ -43,11 +43,11 @@ test('account screen renders no duplicate sibling keys in any status', () => {
 });
 test('delivery UI exposes labelled fields, inline errors, save/cancel and empty states', () => {
   const { hooks, find } = require('./helpers/source.cjs'); const host = hooks(); let snapshot = { status: 'ready', saved: blank(), draft: blank(), errors: { phone: 'Invalid phone' }, message: null };
-  let cancelled = false; const calls = []; let editor = null;
+  let cancelled = false; const calls = []; let editor = null; const revealed = [];
   class Controller { getSnapshot = () => snapshot; subscribe = () => () => {}; activate() {} deactivate() {} refresh() {} edit() {} cancel() { cancelled = true; } save = async fields => { calls.push(fields); return false; }; }
   const Screen = load('src/features/profile/CustomerProfile.tsx', { react: { ...host.react, useSyncExternalStore: (subscribe, get) => get() },
     '../../components/ActionButton': { ActionButton: 'ActionButton' } }).CustomerProfile;
-  const render = () => { host.begin(); return Screen({ controller: new Controller(), editor, onEditorChange: value => { editor = value; } }); };
+  const render = () => { host.begin(); return Screen({ controller: new Controller(), editor, revealField: node => { revealed.push(node); }, onEditorChange: value => { editor = value; } }); };
   let tree = render();
   for (const heading of ['Personal Information', 'Delivery Details']) assert.ok(find(tree, element => element.props?.accessibilityRole === 'header' && element.props.children === heading));
   assert.ok(find(tree, element => element.props?.children === 'No name saved.'));
@@ -145,7 +145,7 @@ test('delivery defaults share contact fields, allow missing information and reje
 });
 function mountEditor(rows, saves, id = 'a') {
   const { hooks, load } = require('./helpers/source.cjs');
-  const host = hooks(); let editor = null;
+  const host = hooks(); let editor = null; const revealed = [];
   const controller = new ProfileController({
     load: async () => profile.mapProfile(rows[id]),
     save: async (draft, fields) => { saves.push({ id, fields }); return { ...profile.mapProfile(rows[id]), ...Object.fromEntries(fields.map(key => [key, draft[key]])) }; },
@@ -155,9 +155,19 @@ function mountEditor(rows, saves, id = 'a') {
     '../../components/ActionButton': { ActionButton: 'ActionButton' },
   });
   controller.activate();
-  return { host, controller, render: () => { host.begin(); return CustomerProfile({ controller, editor, onEditorChange: value => { editor = value; } }); } };
+  const render = () => { host.begin(); return CustomerProfile({ controller, editor, revealField: node => { revealed.push(node); }, onEditorChange: value => { editor = value; } }); };
+  return { host, controller, revealed, render };
 }
 const row = (id, name) => ({ id, full_name: name, phone: '+23276521208', default_street_address: 'Landmark', default_area: 'Community', default_city: 'Town' });
+function mountAccount() {
+  const { hooks, native } = require('./helpers/source.cjs');
+  const host = hooks();
+  const state = { status: 'signed-in', user: { id: 'a', email: 'a@example.invalid', user_metadata: { full_name: 'Customer A' } } };
+  const Screen = load('src/features/auth/AccountScreen.tsx', { react: host.react, 'react-native': native,
+    'expo-router': { Link: 'Link' }, '../account/AccountDashboard': { AccountDashboard: 'AccountDashboard' }, './localFixtureAuth': { localFixtureAvailable: () => true },
+    './AuthContext': { useAuth: () => ({ state, busy: false, message: null }) } }).default;
+  return { host, render: () => { host.begin(); return Screen(); } };
+}
 test('back leaves a clean editor alone and only confirms meaningful unsaved edits', async () => {
   const { find, events, pressBack, resetEvents } = require('./helpers/source.cjs');
   resetEvents(); const saves = [];
@@ -212,6 +222,130 @@ test('back guard registers one listener, spares keyboard dismissal and detaches 
   view.host.unmount();
   assert.equal(events.back.length, 0, 'unmount must remove the back listener');
   assert.equal(events.keyboard.length, 0);
+});
+test('reveal math scrolls only when a field is not fully visible inside the viewport', () => {
+  const { load } = require('./helpers/source.cjs');
+  const { scrollOffsetToReveal } = load('src/lib/scrollReveal.ts');
+  const gap = 24;
+  assert.equal(scrollOffsetToReveal({ offset: 0, viewport: 600 }, { top: 120, height: 60 }, gap), 0, 'a field already inside the band must not move');
+  assert.equal(scrollOffsetToReveal({ offset: 0, viewport: 600 }, { top: 700, height: 60 }, gap), 676, 'a field under the keyboard is placed at the top of the band');
+  assert.equal(scrollOffsetToReveal({ offset: 500, viewport: 600 }, { top: 300, height: 60 }, gap), 276, 'a field above the band scrolls back to its top');
+  assert.equal(scrollOffsetToReveal({ offset: 500, viewport: 600 }, { top: 10, height: 60 }, gap), 0, 'the offset never goes negative');
+  assert.equal(scrollOffsetToReveal({ offset: 40, viewport: 600 }, { top: 70, height: 40 }, gap), 40, 'a field just inside the top keeps the current offset');
+  assert.equal(scrollOffsetToReveal({ offset: 0, viewport: 600, keyboard: 300 }, { top: 500, height: 60 }, gap), 476, 'a field above the overlay keyboard is still moved once the band shrinks');
+  assert.equal(scrollOffsetToReveal({ offset: 0, viewport: 600, keyboard: 300 }, { top: 120, height: 60 }, gap), 0, 'a field inside the reduced band keeps the offset');
+  assert.equal(scrollOffsetToReveal({ offset: 0, viewport: 600, keyboard: 600 }, { top: 120, height: 60 }, gap), 96, 'a keyboard the size of the viewport leaves no band, so the field is raised to the top');
+});
+test('the revealer ignores a viewport that the overlay keyboard has fully covered', () => {
+  const { load } = require('./helpers/source.cjs');
+  const { visibleBand } = load('src/lib/scrollReveal.ts');
+  assert.deepEqual(plain(visibleBand({ offset: 12, viewport: 600 })), { offset: 12, viewport: 600 }, 'no keyboard leaves the whole viewport visible');
+  assert.deepEqual(plain(visibleBand({ offset: 12, viewport: 600, keyboard: 300 })), { offset: 12, viewport: 300 });
+  assert.deepEqual(plain(visibleBand({ offset: 12, viewport: 600, keyboard: 900 })), { offset: 12, viewport: 0 }, 'the band never becomes negative');
+});
+test('the revealer measures inside the scroll content and only asks for a move that is needed', () => {
+  const { load } = require('./helpers/source.cjs');
+  const { revealField } = load('src/lib/scrollReveal.ts');
+  const scrolled = []; const measured = [];
+  const scroll = { scrollTo: options => scrolled.push(options) };
+  const content = { anchor: true };
+  const frame = { offset: 0, viewport: 0 };
+  const field = (top, height) => ({ measureLayout: (anchor, success) => { measured.push(anchor); success(0, top, 320, height); } });
+  revealField({ scroll, content, frame }, field(700, 60));
+  assert.deepEqual(measured, [], 'nothing is measured before the viewport has laid out');
+  frame.viewport = 600;
+  revealField({ scroll: null, content, frame }, field(700, 60));
+  revealField({ scroll, content: null, frame }, field(700, 60));
+  assert.deepEqual(measured, [], 'an unmounted scroll view or anchor must not be measured');
+  revealField({ scroll, content, frame }, null);
+  assert.deepEqual(measured, [], 'a re-reveal without a field must not invent one');
+  revealField({ scroll, content, frame }, field(700, 60));
+  assert.deepEqual(measured, [content], 'the field is measured relative to the scroll content');
+  assert.deepEqual(plain(scrolled), [{ y: 676, animated: true }]);
+  frame.offset = 676; scrolled.length = 0;
+  revealField({ scroll, content, frame }, field(700, 60));
+  assert.deepEqual(scrolled, [], 'the revealed field is visible now and must not move again');
+  frame.keyboard = 676; scrolled.length = 0; measured.length = 0;
+  revealField({ scroll, content, frame }, field(700, 60));
+  assert.deepEqual(measured, [], 'a keyboard that covers the whole viewport leaves nothing to reveal');
+});
+test('opening an editor and focusing a field asks for that input to be revealed', async () => {
+  const { find, attachRefs, resetEvents } = require('./helpers/source.cjs');
+  resetEvents(); const saves = [];
+  const view = mountEditor({ a: row('a', 'Customer A') }, saves);
+  await view.controller.refresh();
+  let tree = view.render();
+  assert.equal(find(tree, element => typeof element.props?.onLayout === 'function'), undefined, 'a closed editor has no input awaiting reveal');
+  find(tree, element => element.props?.label === 'Edit delivery details').props.onPress();
+  tree = view.render();
+  attachRefs(tree);
+  const editor = find(tree, element => typeof element.props?.onLayout === 'function');
+  assert.ok(editor, 'the open editor reports its own layout');
+  editor.props.onLayout();
+  assert.equal(view.revealed.length, 1, 'layout, not a timer, drives the first reveal');
+  assert.equal(view.revealed[0].props.onLayout, editor.props.onLayout, 'the whole editor block is revealed so Save and Cancel come into view too');
+  const phone = find(tree, element => element.type === 'TextInput' && element.props.accessibilityLabel === 'Delivery contact phone');
+  phone.props.onFocus();
+  assert.equal(view.revealed.at(-1).props.accessibilityLabel, 'Delivery contact phone', 'focus reveals the field the customer chose');
+  assert.equal(view.revealed.length, 2, 'the editor scrolls only for layout and focus, never for a timer');
+  view.host.unmount();
+});
+test('the account scroll view feeds live offset and viewport geometry to the revealer', () => {
+  const account = mountAccount();
+  const { find, attachRefs } = require('./helpers/source.cjs');
+  const tree = account.render();
+  const scroll = find(tree, element => element.type === 'ScrollView');
+  const anchor = find(tree, element => element.type === 'View' && element.props?.ref);
+  assert.ok(anchor, 'the scroll content carries a measurable anchor');
+  assert.equal(scroll.props.scrollEventThrottle, 16, 'live offset reporting is enabled');
+  const [base, inset] = scroll.props.contentContainerStyle;
+  assert.ok(base.paddingBottom >= 48, 'trailing controls stay clear of the Android gesture strip');
+  assert.ok(inset.paddingBottom >= base.paddingBottom, 'the keyboard inset only ever adds room at the bottom');
+  assert.equal(scroll.props.keyboardShouldPersistTaps, 'handled');
+  const nodes = attachRefs(tree);
+  const scrollNode = nodes.find(node => Object.hasOwn(node.props, 'scrollEventThrottle'));
+  const anchorNode = nodes.find(node => node.props === anchor.props);
+  const scrolled = []; scrollNode.scrollTo = options => scrolled.push(options);
+  const dashboard = find(tree, element => element.type === 'AccountDashboard');
+  assert.equal(typeof dashboard.props.revealField, 'function', 'the dashboard can request a reveal');
+  scroll.props.onLayout({ nativeEvent: { layout: { height: 600 } } });
+  scroll.props.onScroll({ nativeEvent: { contentOffset: { y: 200 } } });
+  const measured = [];
+  dashboard.props.revealField({ measureLayout: (relative, success) => { measured.push(relative); success(0, 900, 320, 60); } });
+  assert.deepEqual(measured, [anchorNode]);
+  assert.deepEqual(plain(scrolled), [{ y: 876, animated: true }], 'the tracked offset and viewport decide the scroll target');
+  dashboard.props.revealField({ measureLayout: (relative, success) => success(0, 300, 320, 60) });
+  assert.equal(scrolled.length, 1, 'a visible field is left exactly where it is');
+  account.host.unmount();
+});
+test('the Android keyboard shrinks the reveal band and insets the account scroll content', () => {
+  const { find, attachRefs, events, keyDown } = require('./helpers/source.cjs');
+  const account = mountAccount();
+  let tree = account.render();
+  const dashboardOf = node => find(node, element => element.type === 'AccountDashboard');
+  const scrollTo = node => { const scrollNode = attachRefs(node).find(entry => Object.hasOwn(entry.props, 'scrollEventThrottle')); const asked = []; scrollNode.scrollTo = options => asked.push(options); return asked; };
+  find(tree, element => element.type === 'ScrollView').props.onLayout({ nativeEvent: { layout: { height: 600 } } });
+  const asked = scrollTo(tree);
+  dashboardOf(tree).props.revealField({ measureLayout: (_anchor, success) => success(0, 500, 320, 60) });
+  assert.deepEqual(plain(asked), [], 'at rest the field sits inside the full viewport and must not move');
+  assert.equal(events.keyboard.length, 2, 'the account screen tracks the keyboard itself');
+  keyDown('keyboardDidShow', { endCoordinates: { height: 300 } });
+  tree = account.render();
+  const [, inset] = find(tree, element => element.type === 'ScrollView').props.contentContainerStyle;
+  assert.equal(inset.paddingBottom, 324, 'the content grows past the overlay so the last editor buttons can scroll into view');
+  const visible = scrollTo(tree);
+  dashboardOf(tree).props.revealField({ measureLayout: (_anchor, success) => success(0, 500, 320, 60) });
+  assert.deepEqual(plain(visible), [{ y: 476, animated: true }], 'the keyboard-covered field is raised to the top of the reduced band');
+  const moved = find(tree, element => element.type === 'ScrollView');
+  moved.props.onScroll({ nativeEvent: { contentOffset: { y: 476 } } });
+  visible.length = 0;
+  moved.props.onContentSizeChange(320, 1400);
+  assert.deepEqual(visible, [], 'the inset landing must not move the field the customer is watching');
+  keyDown('keyboardDidHide');
+  tree = account.render();
+  assert.equal(find(tree, element => element.type === 'ScrollView').props.contentContainerStyle[1].paddingBottom, 56, 'dismissing the keyboard restores the resting bottom inset');
+  account.host.unmount();
+  assert.equal(events.keyboard.length, 0, 'the keyboard tracking detaches with the screen');
 });
 test('signing out one customer leaves no draft and no back listener for the next customer', async () => {
   const { find, events, pressBack, resetEvents } = require('./helpers/source.cjs');

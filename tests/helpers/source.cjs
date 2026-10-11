@@ -22,7 +22,7 @@ function pressBack() {
   for (const listener of [...events.back].reverse()) if (listener() === true) return true;
   return false;
 }
-function keyDown(type) { events.keyboard.filter(entry => entry.type === type).forEach(entry => entry.listener()); }
+function keyDown(type, event) { events.keyboard.filter(entry => entry.type === type).forEach(entry => entry.listener(event)); }
 // Clears recorded interactions only; live listener registrations follow component mount/unmount.
 function resetEvents() { events.alerts = []; events.dismissed = 0; events.links = []; }
 function load(file, overrides = {}) {
@@ -71,6 +71,19 @@ function find(element, predicate) {
     const result = find(child, predicate); if (result) return result;
   }
 }
+// Simulates native ref attachment only: no layout, no measurement, no scrolling.
+function attachRefs(element, collected = []) {
+  if (!element || typeof element !== 'object') return collected;
+  const target = element.props?.ref;
+  if (target) {
+    const node = { props: element.props };
+    if (typeof target === 'function') target(node);
+    else if ('current' in target) target.current = node;
+    collected.push(node);
+  }
+  for (const child of [element.props?.children].flat(Infinity)) attachRefs(child, collected);
+  return collected;
+}
 // Renders nested function components so assertions can inspect their output.
 function expand(element) {
   if (!element || typeof element !== 'object') return element;
@@ -92,4 +105,4 @@ function duplicateKeys(element, report = []) {
   for (const child of children) duplicateKeys(child, report);
   return report;
 }
-module.exports = { load, hooks, find, expand, duplicateKeys, native, events, pressBack, keyDown, resetEvents };
+module.exports = { load, hooks, find, expand, duplicateKeys, attachRefs, native, events, pressBack, keyDown, resetEvents };
