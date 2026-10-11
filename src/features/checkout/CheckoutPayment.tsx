@@ -26,8 +26,8 @@ export function CheckoutPayment({ draft, errors, lines, fee, busy, onChange, onT
   const error = errors.payment_phone;
   const row = (key: string, label: string, value: string, strong = false) => <View key={key} accessible
     accessibilityLabel={`${label}. ${value}`} accessibilityLiveRegion={strong ? 'polite' : undefined} style={styles.row}>
-    <Text style={styles.text}>{label}</Text>
-    <Text style={strong ? styles.total : styles.text}>{value}</Text>
+    <Text style={[styles.text, styles.rowLabel]}>{label}</Text>
+    <Text style={[strong ? styles.total : styles.text, styles.rowValue]}>{value}</Text>
   </View>;
   return <View style={styles.surface}>
     <Text accessibilityRole="header" style={styles.heading}>Mobile money</Text>
@@ -59,8 +59,8 @@ export function CheckoutPayment({ draft, errors, lines, fee, busy, onChange, onT
 
     <Text accessibilityRole="header" style={styles.heading}>Order summary</Text>
     {lines.map(line => <View key={line.key} accessible accessibilityLabel={`${line.label}, quantity ${line.quantity}. ${line.available ? money(line.lineTotal) : 'No longer available'}`} style={styles.row}>
-      <Text style={styles.text}>{`${line.label} · ${line.quantity}`}</Text>
-      <Text style={styles.text}>{line.available ? money(line.lineTotal) : 'No longer available'}</Text>
+      <Text style={[styles.text, styles.rowLabel]}>{`${line.label} · ${line.quantity}`}</Text>
+      <Text style={[styles.text, styles.rowValue]}>{line.available ? money(line.lineTotal) : 'No longer available'}</Text>
     </View>)}
     <View style={styles.rows}>
       {row('subtotal', 'Bag subtotal', labels.subtotal)}
@@ -74,6 +74,10 @@ export function CheckoutPayment({ draft, errors, lines, fee, busy, onChange, onT
 const styles = StyleSheet.create({
   surface: { gap: 14, padding: 20, borderRadius: 12, backgroundColor: '#FFFFFF' },
   field: { gap: 6 }, rows: { gap: 8 }, row: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' },
+  // Both columns must be able to give way before either reaches the edge of the row: at large text the
+  // value ("Delivery details needed") and a long line label overflowed the screen with flexShrink 0.
+  // Neither column may grow, or a long label squeezes the price out of the row entirely.
+  rowLabel: { flexShrink: 1 }, rowValue: { flexShrink: 1, textAlign: 'right' },
   heading: { fontSize: 21, color: '#292820' }, label: { fontSize: 16, fontWeight: '600', color: '#423F38' },
   text: { fontSize: 16, lineHeight: 25, color: '#423F38' }, note: { fontSize: 15, lineHeight: 23, color: '#665F52' },
   total: { fontSize: 18, fontWeight: '600', color: '#292820' }, error: { color: '#9B2828', fontSize: 16 },

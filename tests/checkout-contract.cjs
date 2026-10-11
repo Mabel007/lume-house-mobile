@@ -671,3 +671,24 @@ test('a reserved id with no order behind it stays reserved, and a checkout that 
   assert.equal(doubtful.store[requestIdFor], stored);
   doubtful.host.unmount();
 });
+
+test('every checkout summary column gives way before it reaches the edge of the row', async () => {
+  const view = mountScreen({ auth: readyAuth, bag: readyBag(oneItem), catalogue: readyCatalogue });
+  view.render();
+  await view.settle();
+  const flat = style => [style].flat(Infinity).filter(entry => entry && typeof entry === 'object');
+  const rows = collect(view.tree, element => element.type === 'View' && /^(Bag subtotal|Delivery|Estimated total)\./.test(String(element.props?.accessibilityLabel ?? '')))
+    .concat(collect(view.tree, element => element.type === 'View' && /, quantity \d+\. NLe/.test(String(element.props?.accessibilityLabel ?? ''))));
+  assert.ok(rows.length >= 4, `the line and the three estimate rows are all present, saw ${rows.length}`);
+  for (const row of rows) {
+    const texts = collect(row, element => element.type === 'Text');
+    assert.equal(texts.length, 2, `a two-column row: ${row.props.accessibilityLabel}`);
+    const [left, right] = texts.map(text => flat(text.props.style));
+    assert.ok(left.every(entry => entry.flex === undefined && entry.flexGrow === undefined), `the label never grows over its neighbour: ${row.props.accessibilityLabel}`);
+    assert.ok(left.some(entry => entry.flexShrink >= 1), `the label shrinks instead of pushing the price away: ${row.props.accessibilityLabel}`);
+    assert.ok(right.every(entry => entry.flex === undefined && entry.flexGrow === undefined), 'a value that grows would squeeze a long label out');
+    assert.ok(right.some(entry => entry.flexShrink >= 1), `the value shrinks instead of running past the edge: ${row.props.accessibilityLabel}`);
+    assert.ok(right.some(entry => entry.textAlign === 'right'), 'a wrapped value stays on its own side of the row');
+  }
+  view.host.unmount();
+});
