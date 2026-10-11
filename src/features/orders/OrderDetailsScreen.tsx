@@ -115,6 +115,7 @@ export default function OrderDetailsScreen() {
     <Section title="Payment status">
       <Text style={styles.pill}>{`Payment: ${orderLabel(order.paymentStatus)}`}</Text>
       <Text style={styles.text}>{`Selected method: ${paymentProviders[order.provider].name}${order.phoneLast4 ? ` · number ending ${order.phoneLast4}` : ''}`}</Text>
+      {order.paymentStatus === 'awaiting_payment' ? <Text accessible accessibilityLiveRegion="polite" style={styles.note}>Payment is awaiting confirmation. The selected method has not been charged or verified by this app.</Text> : null}
       <Text style={styles.note}>This app does not process or verify mobile-money payments. The recorded payment state is separate from fulfilment.</Text>
     </Section>
     <Section title="Order summary">

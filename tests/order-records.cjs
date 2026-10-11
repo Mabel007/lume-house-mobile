@@ -437,3 +437,25 @@ test('asking about the confirmation email replaces only the email line', async (
   assert.doesNotMatch(textOf(failed.tree), /Payment successful|Email sent/i);
   failed.host.unmount();
 });
+
+test('an order that still awaits payment says so every time it is opened, not only once', async () => {
+  const reopened = mountDetails({ params: { orderId: identifier } });
+  reopened.render();
+  await reopened.settle();
+  const text = textOf(reopened.tree);
+  assert.match(text, /Payment is awaiting confirmation\. The selected method has not been charged or verified by this app/,
+    'the web states the wait whenever the record awaits payment, so mobile must not state it only on the first visit');
+  assert.doesNotMatch(text, /Payment successful|payment confirmed|paid\b|charged to/i,
+    'a wait is never dressed up as money received');
+  const note = find(reopened.tree, element => element.props?.accessibilityLiveRegion === 'polite'
+    && /Payment is awaiting confirmation/.test(String(element.props?.children ?? '')));
+  assert.ok(note?.props?.accessible, 'a screen reader is told the payment state changed rather than finding it silently');
+  reopened.host.unmount();
+
+  const settled = mountDetails({ params: { orderId: identifier }, orderLoad: async () => orders.parseOrderDetail({ ...detailRow, payment_status: 'paid' }) });
+  settled.render();
+  await settled.settle();
+  assert.doesNotMatch(textOf(settled.tree), /Payment is awaiting confirmation/, 'a paid record is not shown as still waiting');
+  assert.match(textOf(settled.tree), /Payment: Paid/);
+  settled.host.unmount();
+});
