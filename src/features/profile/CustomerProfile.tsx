@@ -48,7 +48,7 @@ export function CustomerProfile({ controller, editor, onEditorChange, revealFiel
   }
   return <View style={styles.surface}>
     {busy ? <ActivityIndicator accessibilityLabel="Profile loading or saving" color="#535B40" /> : null}
-    {state.message ? <Text accessibilityLiveRegion="polite" style={styles.text}>{state.message}</Text> : null}
+    {state.message ? <View accessible accessibilityRole="alert" accessibilityLiveRegion="polite" accessibilityLabel={state.message}><Text style={styles.text}>{state.message}</Text></View> : null}
     {state.status === 'error' ? <ActionButton label="Retry loading details" onPress={() => void controller.refresh()} /> : state.status !== 'loading' ? <>
       <Text accessibilityRole="header" style={styles.heading}>Personal Information</Text>
       {editor === 'profile' ? <View style={styles.editor} ref={instance => { editorBlock.current = instance; }} onLayout={() => reveal.current(editorBlock.current)}>

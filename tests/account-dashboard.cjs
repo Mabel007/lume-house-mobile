@@ -66,6 +66,24 @@ test('local QA builds hide Google identity and never render an email address', a
   assert.ok(textOf(tree).includes('Your account'));
   blankView.host.unmount();
 });
+test('the identity block is one screen-reader focus stop that names the customer and the sign-in context', async () => {
+  const rows = { a: { ...blank(), full_name: 'Aisha Sesay', phone: '+23276521208' }, b: blank() };
+  const saved = mount('a', rows); const tree = await saved.ready();
+  const header = find(tree, element => element.props?.accessible === true);
+  assert.ok(header, 'the identity block is merged into one accessible element');
+  assert.equal(header.props.accessibilityRole, 'header');
+  assert.equal(header.props.accessibilityLabel, 'Your account, Aisha Sesay, a@example.invalid, Signed in with Google');
+  assert.equal([header.props.children].flat(Infinity).filter(child => child?.props?.accessibilityLabel !== undefined).length, 0, 'a merged child must not repeat the announcement');
+  assert.equal(avatar(header), 'AS', 'the initials stay on screen but are decorative');
+  assert.equal(header.props.accessibilityElementsHidden, undefined, 'the focus stop itself is never hidden');
+  saved.host.unmount();
+  const localView = mount('b', rows, { local: true }); const local = await localView.ready();
+  const localHeader = find(local, element => element.props?.accessible === true);
+  assert.equal(localHeader.props.accessibilityLabel, 'Your account, Signed in to local QA', 'a customer with nothing saved is still named once');
+  assert.ok(!localHeader.props.accessibilityLabel.includes('@'), 'a local session must not announce an address');
+  assert.ok(!localHeader.props.accessibilityLabel.includes('Google'), 'a local session must not claim Google sign-in');
+  localView.host.unmount();
+});
 test('navigation opens exactly one editor at a time and keeps the panels honest', async () => {
   resetEvents();
   const rows = { a: { ...blank(), full_name: 'Customer A', phone: '+23276521208', default_street_address: 'Landmark', default_area: 'Community', default_city: 'Town' } };

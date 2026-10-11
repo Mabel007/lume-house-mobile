@@ -31,17 +31,20 @@ export function AccountDashboard({ userId, email, accountName, local, busy, reve
   const [linkStatus, setLinkStatus] = useState<string | null>(null);
   const editor = section === 'profile' || section === 'delivery' ? section : null;
   const displayName = state.saved.full_name.trim() || (local ? '' : accountName.trim());
+  const signedInWith = local ? 'Signed in to local QA' : 'Signed in with Google';
+  // One focus stop for the whole identity block: a screen reader hears the screen title, who this session belongs to and how, before any control.
+  const identity = ['Your account', displayName, !local && email ? email : null, signedInWith].filter(Boolean).join(', ');
   function select(next: AccountSection) { setLinkStatus(null); setSection(current => current === next ? null : next); }
   function openPage(path: string) {
     void WebBrowser.openBrowserAsync(`${shop.webOrigin}${path}`).catch(() => setLinkStatus('That page could not be opened right now. Please try again later.'));
   }
   return <View style={styles.group}>
-    <View style={styles.summary}>
+    <View accessible accessibilityRole="header" accessibilityLabel={identity} style={styles.summary}>
       <Text accessibilityElementsHidden style={styles.avatar}>{accountInitials(displayName)}</Text>
       <View style={styles.summaryCopy}>
         <Text style={styles.name}>{displayName || 'Your account'}</Text>
         {local ? null : <Text selectable style={styles.email}>{email || 'Email unavailable'}</Text>}
-        <Text style={styles.email}>{local ? 'Signed in to local QA' : 'Signed in with Google'}</Text>
+        <Text style={styles.email}>{signedInWith}</Text>
       </View>
     </View>
     <AccountNavigation active={section} busy={busy} local={local} onSelect={select} onSignOut={onSignOut} />

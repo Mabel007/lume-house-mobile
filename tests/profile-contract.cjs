@@ -223,6 +223,32 @@ test('back guard registers one listener, spares keyboard dismissal and detaches 
   assert.equal(events.back.length, 0, 'unmount must remove the back listener');
   assert.equal(events.keyboard.length, 0);
 });
+test('the validation summary is an announced alert and the field errors keep their own labels', () => {
+  const { hooks, find } = require('./helpers/source.cjs'); const host = hooks();
+  const snapshot = { status: 'ready', saved: blank(), draft: blank(), errors: { phone: 'Enter a valid phone number' }, message: 'Please check the highlighted fields.' };
+  class Controller { getSnapshot = () => snapshot; subscribe = () => () => {}; activate() {} deactivate() {} refresh() {} edit() {} cancel() {} save = async () => false; }
+  const { CustomerProfile } = load('src/features/profile/CustomerProfile.tsx', {
+    react: { ...host.react, useSyncExternalStore: (subscribe, get) => get() },
+    '../../components/ActionButton': { ActionButton: 'ActionButton' },
+  });
+  host.begin(); const tree = CustomerProfile({ controller: new Controller(), editor: 'profile', revealField: () => {}, onEditorChange: () => {} });
+  const summary = find(tree, element => element.props?.accessibilityLiveRegion === 'polite');
+  assert.equal(summary.props.accessibilityRole, 'alert', 'a rejected save is announced and not only painted red');
+  assert.equal(summary.props.accessible, true, 'the summary is its own screen-reader focus stop, not invisible static text');
+  assert.equal(summary.props.accessibilityLabel, 'Please check the highlighted fields.');
+  assert.equal(find(summary, element => element.type === 'Text').props.children, 'Please check the highlighted fields.', 'sighted customers still read the same words');
+  assert.ok(find(tree, element => element.props?.accessibilityRole === 'alert' && element.props?.children === 'Enter a valid phone number'), 'the inline field error stays a node of its own');
+  assert.equal(find(tree, element => element.props?.accessibilityLabel === 'Contact phone').props.accessibilityHint, 'Enter a valid phone number', 'the focused field carries its own error');
+  host.unmount();
+});
+test('the account title is announced once and the eyebrow stays decorative', () => {
+  const { find } = require('./helpers/source.cjs');
+  const account = mountAccount();
+  const tree = account.render();
+  assert.equal(find(tree, element => element.props?.children === 'MY ACCOUNT').props.accessibilityElementsHidden, true, 'the eyebrow only repeats the title a screen reader already hears');
+  assert.equal(find(tree, element => element.props?.accessibilityRole === 'header').props.children, 'Your account');
+  account.host.unmount();
+});
 test('reveal math scrolls only when a field is not fully visible inside the viewport', () => {
   const { load } = require('./helpers/source.cjs');
   const { scrollOffsetToReveal } = load('src/lib/scrollReveal.ts');

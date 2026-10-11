@@ -41,7 +41,7 @@ export default function AccountScreen() {
   const user = state.status === 'signed-in' ? state.user : undefined;
   return <SafeAreaView style={styles.root}><KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView ref={scroll} contentContainerStyle={[styles.content, { paddingBottom: Math.max(56, imeHeight + 24) }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" scrollEventThrottle={16} onScroll={event => { frame.current.offset = event.nativeEvent.contentOffset.y; }} onLayout={event => { frame.current.viewport = event.nativeEvent.layout.height; reveal(null); }} onContentSizeChange={() => reveal(null)}>
     <View ref={content} style={styles.flow}>
-      <Text style={styles.eyebrow}>MY ACCOUNT</Text>
+      <Text accessibilityElementsHidden style={styles.eyebrow}>MY ACCOUNT</Text>
       <Text accessibilityRole="header" style={styles.title}>Your account</Text>
       {state.status === 'restoring' ? <Text style={styles.text}>Restoring your session…</Text> : null}
       {loading ? <View accessibilityLiveRegion="polite"><ActivityIndicator color="#535B40" accessibilityLabel="Account loading" /><Text style={styles.text}>{busy ? 'Updating your account…' : 'Please wait…'}</Text></View> : null}
