@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
+import { router } from 'expo-router';
 import { shop } from '../../config/shop';
 import { AccountNavigation, type AccountSection } from './AccountNavigation';
 import { accountInitials } from './accountInitials';
@@ -34,7 +35,12 @@ export function AccountDashboard({ userId, email, accountName, local, busy, reve
   const signedInWith = local ? 'Signed in to local QA' : 'Signed in with Google';
   // One focus stop for the whole identity block: a screen reader hears the screen title, who this session belongs to and how, before any control.
   const identity = ['Your account', displayName, !local && email ? email : null, signedInWith].filter(Boolean).join(', ');
-  function select(next: AccountSection) { setLinkStatus(null); setSection(current => current === next ? null : next); }
+  function select(next: AccountSection) {
+    setLinkStatus(null);
+    // Order history is its own native screen now, so this row goes there instead of opening a panel here.
+    if (next === 'orders') { router.navigate('/orders'); return; }
+    setSection(current => current === next ? null : next);
+  }
   function openPage(path: string) {
     void WebBrowser.openBrowserAsync(`${shop.webOrigin}${path}`).catch(() => setLinkStatus('That page could not be opened right now. Please try again later.'));
   }
@@ -48,16 +54,6 @@ export function AccountDashboard({ userId, email, accountName, local, busy, reve
       </View>
     </View>
     <AccountNavigation active={section} busy={busy} local={local} onSelect={select} onSignOut={onSignOut} />
-    {section === 'orders' ? <View style={styles.panel}>
-      <Text accessibilityRole="header" style={styles.panelHeading}>My Orders</Text>
-      <Text style={styles.text}>Order history is not available in this app yet, so this screen does not list any order.</Text>
-      {local ? <Text style={styles.text}>This build reads local QA data, which has no orders. Nothing here replaces your real order records.</Text> : <>
-        <Text style={styles.text}>Your orders, their delivery details and recorded payment status are on the Lumé House website. You may need to sign in there with the same Google account.</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="Open My Orders on the Lumé House website" onPress={() => openPage('/account/orders')} style={({ pressed }) => [styles.linkRow, pressed && styles.pressed]}>
-          <Text style={styles.link}>Open My Orders on the Lumé House website ›</Text>
-        </Pressable>
-      </>}
-    </View> : null}
     {section === 'help' ? <View style={styles.panel}>
       <Text accessibilityRole="header" style={styles.panelHeading}>Help & Support</Text>
       <Text style={styles.text}>{local ? 'You are signed in with a private local enrollment code.' : 'You sign in with Google. Lumé House does not manage a password for this account.'}</Text>

@@ -14,9 +14,10 @@ function textOf(element) {
   return [element.props?.children].flat(Infinity).map(textOf).join(' ');
 }
 function mount(id, rows, { local = false } = {}) {
-  const host = hooks(); const writes = [];
+  const host = hooks(); const writes = []; const routes = [];
   const Dashboard = load('src/features/account/AccountDashboard.tsx', {
     react: { ...host.react, useSyncExternalStore: (subscribe, get) => get() },
+    'expo-router': { router: { navigate: route => routes.push(['navigate', route]), push: route => routes.push(['push', route]) } },
     '../profile/CustomerProfile': { CustomerProfile: 'CustomerProfile' },
     '../profile/profileRepository': {
       loadProfile: async (_client, owner) => { writes.push(['load', owner]); return profile.mapProfile(rows[owner]); },
@@ -25,7 +26,7 @@ function mount(id, rows, { local = false } = {}) {
     '../../lib/supabase/client': { getSupabaseClient: () => ({ synthetic: true }) },
   }).AccountDashboard;
   const render = () => { host.begin(); return expand(Dashboard({ userId: id, email: `${id}@example.invalid`, accountName: 'OAuth Name', local, busy: false, onSignOut: () => writes.push(['sign-out', id]) })); };
-  return { host, writes, render, ready: async () => { render(); await settle(); return render(); } };
+  return { host, writes, routes, render, ready: async () => { render(); await settle(); return render(); } };
 }
 
 test('dashboard header shows the saved customer identity with a real initials mark', async () => {
@@ -100,13 +101,9 @@ test('navigation opens exactly one editor at a time and keeps the panels honest'
   assert.equal(surface(tree).editor, null, 'the same row closes its section');
   assert.deepEqual(view.writes.filter(call => call[0] === 'load'), [['load', 'a']], 'the owner bound into the repository is the signed-in customer');
   rowFor(view.render(), 'My Orders').props.onPress(); tree = view.render();
-  const orders = textOf(tree);
-  assert.match(orders, /Order history is not available in this app yet/);
-  assert.equal(find(tree, element => element.type === 'FlatList'), undefined, 'no order list is rendered');
-  assert.ok(!/no orders yet|you have \d+ orders|order reference/i.test(orders), 'orders panel must not imply recorded data');
-  const before = events.links.length;
-  find(tree, element => element.props?.accessibilityLabel === 'Open My Orders on the Lumé House website').props.onPress();
-  assert.deepEqual(events.links.slice(before), [`${shop.webOrigin}/account/orders`]);
+  assert.deepEqual(view.routes, [['navigate', '/orders']], 'My Orders is a native screen now, not a panel on this screen');
+  assert.doesNotMatch(textOf(tree), /Order history is not available|you have \d+ orders|order reference/i, 'the placeholder is gone and no order data is implied');
+  assert.equal(events.links.length, 0, 'order history never leaves the app for the hosted website');
   view.host.unmount();
 });
 test('local builds do not link customer data to the hosted website', async () => {
@@ -115,6 +112,7 @@ test('local builds do not link customer data to the hosted website', async () =>
   const view = mount('a', rows, { local: true }); let tree = await view.ready();
   rowFor(tree, 'My Orders').props.onPress(); tree = view.render();
   assert.equal(find(tree, element => String(element.props?.accessibilityLabel ?? '').startsWith('Open My Orders')), undefined);
+  assert.deepEqual(view.routes, [['navigate', '/orders']], 'a local build reads its own local orders screen');
   assert.equal(events.links.length, 0, 'local QA must not open hosted customer pages');
   rowFor(tree, 'Help & Support').props.onPress(); tree = view.render();
   assert.equal(events.links.length, 0);

@@ -129,7 +129,7 @@ export default function OrderDetailsScreen() {
         accessibilityLabel="Check the confirmation email status for this order" onPress={() => setEmailRevision(value => value + 1)} />
     </Section>
     <View style={styles.actions}>
-      <Link href="/account" asChild><Pressable accessibilityRole="link" style={styles.link}><Text style={styles.text}>Your account</Text></Pressable></Link>
+      <Link href="/orders" asChild><Pressable accessibilityRole="link" style={styles.link}><Text style={styles.text}>Your orders</Text></Pressable></Link>
       <Link href="/" asChild><Pressable accessibilityRole="link" style={styles.link}><Text style={styles.text}>Continue shopping</Text></Pressable></Link>
     </View>
   </Frame>;

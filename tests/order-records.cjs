@@ -312,7 +312,7 @@ test('a confirmation opened from checkout shows only what the shop recorded', as
     'placement is shown as placement: no money taken, no email delivered');
   assert.ok(link(view.tree, '/'), 'the way back to the catalogue is offered');
   assert.match(text, /Continue shopping/);
-  assert.ok(link(view.tree, '/account'));
+  assert.ok(link(view.tree, '/orders'), 'the rest of this account\u2019s orders is one step away');
   assert.equal(view.calls.checks.length, 0, 'the email state is carried in, never re-asked on arrival');
   view.host.unmount();
 });

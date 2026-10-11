@@ -14,7 +14,7 @@ export function AccountNavigation({ active, busy, local, onSelect, onSignOut }: 
   const rows: { key: AccountSection; glyph: string; title: string; description: string }[] = [
     { key: 'profile', glyph: 'P', title: 'Personal Information', description: 'Your saved name and contact phone.' },
     { key: 'delivery', glyph: 'D', title: 'Delivery Details', description: 'Your default street address, area and city.' },
-    { key: 'orders', glyph: 'O', title: 'My Orders', description: local ? 'Order history is not available in this app.' : 'Order history opens on the Lumé House website.' },
+    { key: 'orders', glyph: 'O', title: 'My Orders', description: 'Your placed orders and the status the shop recorded.' },
     { key: 'help', glyph: 'H', title: 'Help & Support', description: local ? 'Account and delivery guidance.' : 'Help, delivery, returns and contact pages.' },
   ];
   return <View accessibilityLabel="Account sections" style={styles.group}>
