@@ -25,12 +25,6 @@ const keyStorage: KeyStorage = {
   removeItem: key => AsyncStorage.removeItem(key).then(() => undefined),
 };
 
-const emailCopy: Record<string, string> = {
-  queued: 'Your confirmation email is queued. This build cannot prove that any email was delivered.',
-  sent: 'Your confirmation email has been accepted for sending by the provider, which is not proof that it arrived.',
-  review_required: 'Your confirmation email needs a manual review by the shop. Your order is saved.',
-};
-
 export default function CheckoutScreen() {
   const { state: auth, busy: authBusy } = useAuth();
   const bag = useBag();
@@ -114,6 +108,7 @@ function CheckoutFlow({ userId, email, busy, pieces, items, products, reveal, re
   const keyboardOpen = useRef(false);
   const backPress = useRef<() => boolean>(() => false);
   const keepBag = useRef(refreshBag);
+  const confirmed = useRef(false);
   const [controller] = useState(() => new CheckoutController(getSupabaseClient(), userId, keyStorage, randomUUID));
   const submission = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   useEffect(() => {
@@ -135,6 +130,15 @@ function CheckoutFlow({ userId, email, busy, pieces, items, products, reveal, re
     // The Bag is server state: the order service emptied it, so this screen reloads instead of editing a local copy.
     if (submission.status === 'placed') { dirty.current = false; keepBag.current(); }
   }, [submission.status]);
+  useEffect(() => {
+    // The confirmation screen reads the committed order back from the database, so this hand-off carries only
+    // its identity plus the email state the placement response actually returned.
+    if (submission.status !== 'placed' || !submission.orderId) return;
+    if (confirmed.current) return;
+    confirmed.current = true;
+    router.replace({ pathname: '/orders/[orderId]', params: { orderId: submission.orderId, received: '1',
+      ...(submission.emailStatus ? { email: submission.emailStatus } : {}) } });
+  }, [submission]);
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => backPress.current());
     const shown = Keyboard.addListener('keyboardDidShow', () => { keyboardOpen.current = true; });
@@ -158,7 +162,7 @@ function CheckoutFlow({ userId, email, busy, pieces, items, products, reveal, re
   // A field only reports once the customer has entered it and moved on, so an untouched form never reads as a wall of errors.
   const touch = (field: CheckoutField) => setTouched(current => current[field] ? current : { ...current, [field]: true });
   const fee = deliveryFee(draft);
-  if (submission.status === 'placed') return <Placed submission={submission} />;
+  if (submission.status === 'placed') return <Text accessible accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.notice}>Your order is saved. Opening your order confirmation…</Text>;
   const blocked = busy || !pieces.length || pieces.some(piece => !piece.available) || fee === null ||
     submission.status === 'submitting' || submission.status === 'checking';
   const place = () => {
@@ -188,18 +192,6 @@ function CheckoutFlow({ userId, email, busy, pieces, items, products, reveal, re
   </>;
 }
 
-// Only what the order service actually returned, with the payment and email claims kept exactly as narrow as the evidence.
-function Placed({ submission }: { submission: { reference: string | null; emailStatus: string | null } }) {
-  return <View style={styles.submit}>
-    <Text accessibilityRole="header" style={styles.placedTitle}>{submission.reference ? `Order ${submission.reference} received.` : 'Your order was already placed.'}</Text>
-    <Text style={styles.text}>Payment status: awaiting confirmation. Your selected mobile-money method has not been charged or verified by this app.</Text>
-    <Text style={styles.text}>{submission.emailStatus === null
-      ? 'We found the order your previous checkout started. Your Bag has been refreshed.'
-      : emailCopy[submission.emailStatus]}</Text>
-    <Text style={styles.note}>An order can be placed before any payment is confirmed, and a queued email is not a delivered one.</Text>
-  </View>;
-}
-
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#F6F2EB' },
   content: { padding: 24, paddingBottom: 56, maxWidth: 650, width: '100%', alignSelf: 'center' },
@@ -212,7 +204,6 @@ const styles = StyleSheet.create({
   submit: { gap: 12, padding: 20, borderRadius: 12, backgroundColor: '#FFFFFF' },
   place: { minHeight: 56, justifyContent: 'center', alignItems: 'center', borderRadius: 8, backgroundColor: '#535B40' },
   placeText: { color: '#FFFFFF', fontSize: 17, fontWeight: '600' },
-  placedTitle: { fontSize: 23, color: '#292820' },
   note: { fontSize: 15, lineHeight: 23, color: '#665F52' },
   pressed: { opacity: 0.7 },
   link: { minHeight: 48, justifyContent: 'center' },

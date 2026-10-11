@@ -349,7 +349,14 @@ test('the checkout screen is wired to the trusted seam with no client-side autho
   assert.equal(sources.some(source => /CheckoutController/.test(source)), true, 'the submission seam is now in use');
   const screen = sources[1];
   assert.match(screen, /Place order/);
-  assert.match(screen, /awaiting confirmation/i);
+  assert.match(screen, /Payment awaits confirmation/, 'checkout still says placement is not payment');
+  assert.match(screen, /\/orders\/\[orderId\]/, 'a placement hands off to the order screen instead of keeping its own summary there');
   assert.equal(/total_cents|delivery_fee|unit_price.*body|paid\b/i.test(screen), false, 'the screen sends no money and claims no payment');
   assert.doesNotMatch(screen, /Payment successful|payment confirmed|Order paid|email sent|Email sent/i, 'no invented success');
+  const details = fs.readFileSync('src/features/orders/OrderDetailsScreen.tsx', 'utf8');
+  assert.match(details, /Payment: \$\{orderLabel\(order\.paymentStatus\)\}/, 'the payment state is shown only through the shared wording');
+  assert.match(fs.readFileSync('src/features/orders/orders.ts', 'utf8'), /return 'Awaiting confirmation'/,
+    'that wording names the state as the wait it is');
+  assert.doesNotMatch(details, /Payment successful|payment confirmed|Email sent|has been delivered/i, 'the order screen claims no money and no delivery');
+  assert.match(fs.readFileSync('src/app/orders/[orderId].tsx', 'utf8'), /features\/orders\/OrderDetailsScreen/, 'the route reaches the order screen');
 });

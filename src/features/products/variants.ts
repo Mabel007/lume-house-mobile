@@ -43,7 +43,8 @@ export function variantAvailable(variant: ProductVariant | undefined): boolean {
   return !!variant && (variant.inventoryPolicy === 'untracked' || variant.available === true);
 }
 
-export function variantLabel(variant: ProductVariant): string {
+// An order item keeps only its option snapshot, so this reads the options rather than a whole variant.
+export function variantLabel(variant: { options: Readonly<Record<string, string>> }): string {
   return Object.entries(variant.options).map(([key, value]) => `${key}: ${value}`).join(' · ');
 }
 

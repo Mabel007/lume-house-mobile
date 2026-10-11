@@ -163,7 +163,7 @@ function mountScreen({ auth, bag, catalogue, profileLoad = async () => profile.m
   store = memoryStore(), newId = nextId }) {
   const host = hooks();
   const view = {
-    host, tree: null, backs: [], calls: [], store: store.values, backend,
+    host, tree: null, backs: [], routes: [], calls: [], store: store.values, backend,
     render: () => { host.begin(); view.tree = expand(Screen({})); return view.tree; },
     // A state change from an effect only shows up on the next render, so settle re-renders after each microtask drain.
     settle: async () => {
@@ -177,7 +177,9 @@ function mountScreen({ auth, bag, catalogue, profileLoad = async () => profile.m
   };
   const Screen = load('src/features/checkout/CheckoutScreen.tsx', {
     react: { ...host.react, useCallback: fn => fn },
-    'expo-router': { Link: 'Link', useFocusEffect: () => {}, router: { back: () => view.backs.push('back') } },
+    // Both navigation forms are recorded so a test can prove placement hands off exactly once.
+    'expo-router': { Link: 'Link', useFocusEffect: () => {}, router: { back: () => view.backs.push('back'),
+      replace: route => view.routes.push(route), navigate: route => view.routes.push(route) } },
     'expo-crypto': { randomUUID: newId },
     // A default-imported module arrives here unwrapped: the loader's interop adds the `default` key.
     '@react-native-async-storage/async-storage': store.api,
@@ -553,14 +555,13 @@ test('placing an order calls the shared order service with no client money and s
     'the customer estimate never travels as authority');
   assert.equal(backend.calls.invokes[0].options.headers.Authorization, 'Bearer synthetic-token');
   const text = textOf(view.tree);
-  assert.match(text, /Order LH-0123456789ABCDEF received/);
-  assert.match(text, /Payment status: awaiting confirmation/);
-  assert.match(text, /confirmation email is queued\. This build cannot prove that any email was delivered/);
-  assert.match(text, /An order can be placed before any payment is confirmed, and a queued email is not a delivered one/);
+  assert.match(text, /Your order is saved\. Opening your order confirmation/);
   assert.doesNotMatch(text, /Payment successful|Email sent|payment confirmed|paid/i, 'a placement is neither a payment nor a delivered email');
+  assert.deepEqual(plain(view.routes), [{ pathname: '/orders/[orderId]', params: { orderId: placedRow.id, received: '1', email: 'queued' } }],
+    'the confirmation screen is handed only the order identity plus the email state this response returned');
   assert.equal(view.store[requestIdFor], undefined, 'a confirmed order releases its request id');
   assert.equal(refreshes, 1, 'the server emptied the Bag, so this screen reloads it instead of editing a copy');
-  assert.deepEqual(inputLabels(view.tree), [], 'the confirmed draft is replaced by what the order service returned');
+  assert.deepEqual(inputLabels(view.tree), [], 'the confirmed draft is replaced by the hand-off line');
   assert.equal(button(view.tree, 'Place order'), undefined);
   assert.deepEqual(duplicateKeys(view.tree), []);
   view.host.unmount();
@@ -584,7 +585,7 @@ test('a tap while an order is in flight never becomes a second order', async () 
   gate.resolve(queued);
   await view.settle();
   assert.equal(backend.calls.invokes.length, 1);
-  assert.match(textOf(view.tree), /Order LH-0123456789ABCDEF received/);
+  assert.equal(view.routes.length, 1, 'one answered placement opens the confirmation screen once');
   view.host.unmount();
 });
 
@@ -623,7 +624,7 @@ test('an unanswered order keeps its request id and retries the byte-identical re
   await view.settle();
   assert.equal(backend.calls.invokes.length, 2);
   assert.deepEqual(plain(backend.calls.invokes[1].options.body), original, 'the retry re-sends the same request id, checkout and reviewed cart');
-  assert.match(textOf(view.tree), /Order LH-0123456789ABCDEF received/);
+  assert.equal(view.routes.length, 1, 'the retry that came back with an order opens the confirmation once');
   assert.equal(view.store[requestIdFor], undefined);
   view.host.unmount();
 });
@@ -638,10 +639,10 @@ test('an interrupted checkout is recovered from the order table before a new ord
   assert.deepEqual(backend.calls.reads, [{ column: 'checkout_request_id', value: stored }], 'the recovery read is keyed by the request id alone');
   assert.equal(backend.calls.invokes.length, 0, 'a checkout that already placed an order is never placed again');
   const text = textOf(view.tree);
-  assert.match(text, /Your order was already placed/);
-  assert.match(text, /Payment status: awaiting confirmation/);
-  assert.match(text, /We found the order your previous checkout started/);
-  assert.doesNotMatch(text, /confirmation email is queued|accepted for sending|needs a manual review/, 'a recovered order has no email evidence, so none is claimed');
+  assert.match(text, /Your order is saved\. Opening your order confirmation/);
+  assert.deepEqual(plain(view.routes), [{ pathname: '/orders/[orderId]', params: { orderId: placedRow.id, received: '1' } }],
+    'a recovered checkout is carried to the order the database says exists, and no email state is invented for it');
+  assert.doesNotMatch(text, /queued|accepted for sending|manual review/i, 'a recovery read has no email evidence, so none is claimed');
   assert.equal(view.store[requestIdFor], undefined);
   view.host.unmount();
 });
