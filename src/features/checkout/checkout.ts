@@ -110,11 +110,12 @@ export function estimateLabels(draft: CheckoutDraft, estimate: Estimate) {
   };
 }
 
-export function checkoutPayload(draft: CheckoutDraft) {
-  return {
+export function checkoutPayload(draft: CheckoutDraft) {  return {
     full_name: draft.full_name.trim(), email: draft.email.trim(), contact_phone: normalizePhone(draft.contact_phone),
     payment_phone: normalizePhone(paymentPhone(draft)), provider: draft.provider, fulfilment: draft.fulfilment,
     zone_id: draft.zone, street: draft.street.trim(), area: draft.area.trim(), city: draft.city.trim(),
     instructions: draft.instructions.trim(),
   };
 }
+
+export type CheckoutPayload = ReturnType<typeof checkoutPayload>;
