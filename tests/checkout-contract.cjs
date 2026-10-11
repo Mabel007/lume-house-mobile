@@ -97,6 +97,22 @@ test('totals stay an estimate and fail closed until every line prices', () => {
   assert.deepEqual(plain(checkout.estimatedTotals([], 0)), { subtotal: null, fee: 0, total: null, complete: false }, 'an empty Bag is never totalled');
 });
 
+test('estimate wording only claims what the client can actually resolve', () => {
+  const priced = [{ available: true, lineTotal: 12000 }];
+  assert.deepEqual(plain(checkout.estimateLabels(draft({}), checkout.estimatedTotals(priced, null))),
+    { subtotal: 'NLe 120', fee: 'Choose at checkout', total: 'Delivery details needed' });
+  assert.deepEqual(plain(checkout.estimateLabels(draft({}), checkout.estimatedTotals(priced, 5000))),
+    { subtotal: 'NLe 120', fee: 'NLe 50', total: 'NLe 170' });
+  assert.deepEqual(plain(checkout.estimateLabels(draft({ fulfilment: 'pickup' }), checkout.estimatedTotals(priced, 0))),
+    { subtotal: 'NLe 120', fee: 'Free with pickup', total: 'NLe 120' }, 'pickup is free because the trusted RPC sets that fee to zero');
+  assert.deepEqual(plain(checkout.estimateLabels(draft({}), checkout.estimatedTotals([{ available: false, lineTotal: null }], 4000))),
+    { subtotal: 'Prices unavailable yet', fee: 'NLe 40', total: 'Prices unavailable yet' }, 'an unpriced Bag is never totalled around a zone fee');
+  assert.deepEqual(plain(checkout.estimateLabels(draft({ fulfilment: 'pickup' }), checkout.estimatedTotals([{ available: false, lineTotal: null }], 0))),
+    { subtotal: 'Prices unavailable yet', fee: 'Free with pickup', total: 'Prices unavailable yet' });
+  assert.deepEqual(plain(checkout.estimateLabels(draft({}), checkout.estimatedTotals([], null))),
+    { subtotal: 'Prices unavailable yet', fee: 'Choose at checkout', total: 'Prices unavailable yet' }, 'an empty Bag shows no money');
+});
+
 test('the placement payload normalizes phones and trims text without carrying client authority', () => {
   const payload = checkout.checkoutPayload(draft({ full_name: '  Aisha Sesay  ', contact_phone: '00232 76 521 208',
     email: ' a@example.invalid ', street: ' Landmark ', area: ' Goderich ', city: ' freetown ', zone: 'zone-2',
@@ -156,7 +172,10 @@ const oneItem = [{ productId: 'product-a', variantId: 'actual-variant-a', quanti
 const inputLabeled = (tree, label) => find(tree, element => element.type === 'TextInput' && element.props?.accessibilityLabel === label);
 const inputLabels = tree => collect(tree, element => element.type === 'TextInput').map(element => element.props.accessibilityLabel);
 const editors = ['Full name *', 'Phone number *', 'Email *'];
+const paymentEditor = ['Mobile money number *'];
 const deliveryEditors = [...editors, 'Street address / landmark *', 'Area / community *', 'City / town *', 'Delivery instructions (optional)'];
+const summaryRow = (tree, label) => find(tree, element => element.props?.accessible === true && String(element.props?.accessibilityLabel ?? '').startsWith(`${label}.`));
+const radio = (tree, label) => find(tree, element => element.props?.accessibilityRole === 'radio' && element.props?.accessibilityLabel === label);
 
 test('the checkout foundation resolves session, Bag and catalogue state without offering placement', () => {
   const signedOut = mountScreen({ auth: () => ({ state: { status: 'signed-out' }, busy: false }),
@@ -186,24 +205,27 @@ test('the checkout foundation resolves session, Bag and catalogue state without 
   signedOut.host.unmount(); empty.host.unmount(); loaded.host.unmount();
 });
 
-test('checkout edits apply here only: contact and delivery editors, no payment or placement controls', async () => {
+test('checkout edits apply here only: contact, delivery and money editors with no placement control', async () => {
   const view = mountScreen({ auth: readyAuth, bag: readyBag(oneItem), catalogue: readyCatalogue });
   view.render();
   await view.settle();
-  assert.deepEqual(inputLabels(view.tree), deliveryEditors, 'delivery is the default fulfilment');
+  assert.deepEqual(inputLabels(view.tree), [...deliveryEditors, ...paymentEditor], 'delivery is the default fulfilment');
   assert.equal(view.calls.length, 1, 'the saved profile is read once per signed-in customer');
   assert.equal(view.calls[0].id, 'customer-a');
   assert.equal(view.calls[0].active, 'function', 'the repository is given an ownership guard');
   assert.ok(collect(view.tree, element => element.type === 'TextInput').every(input => input.props.accessibilityLabel.length > 0), 'every editor is labelled for screen readers');
   assert.equal(inputLabeled(view.tree, 'Email *').props.keyboardType, 'email-address');
   assert.equal(inputLabeled(view.tree, 'Phone number *').props.keyboardType, 'phone-pad');
+  assert.equal(inputLabeled(view.tree, 'Mobile money number *').props.keyboardType, 'phone-pad');
   assert.equal(inputLabeled(view.tree, 'Delivery instructions (optional)').props.multiline, true);
   assert.equal(inputLabeled(view.tree, 'Delivery instructions (optional)').props.maxLength, 500);
   assert.equal(inputLabeled(view.tree, 'Full name *').props.maxLength, 200);
   const text = textOf(view.tree);
   assert.match(text, /Contact information/);
   assert.match(text, /Delivery or pickup/);
-  assert.doesNotMatch(text, /Orange Money|Afrimoney|Payment number|Place order|Pay now|order placed|success/i, 'payment and placement arrive in later slices');
+  assert.match(text, /Mobile money/);
+  assert.doesNotMatch(text, /Place order|Pay now|order placed|payment confirmed|paid/i, 'placement arrives in the next slice');
+  assert.match(text, /Order placement is not available in this build yet/);
   assert.deepEqual(duplicateKeys(view.tree), []);
   view.host.unmount();
 });
@@ -258,12 +280,12 @@ test('pickup hides the delivery editors and delivery zones state their provision
   zones[1].props.onPress();
   await view.settle();
   const chosen = collect(view.tree, element => element.props?.accessibilityRole === 'radio' && element.props?.accessibilityState?.checked === true);
-  assert.equal(chosen.length, 2, 'one fulfilment and one zone are checked');
+  assert.equal(chosen.length, 3, 'one fulfilment, one zone and one provider are checked');
   assert.equal(chosen[1].props.accessibilityLabel, 'Lumley to Congo Cross, including Aberdeen. Delivery NLe 50.');
   const pickup = find(view.tree, element => element.props?.accessibilityRole === 'radio' && element.props?.accessibilityLabel === 'Pickup');
   pickup.props.onPress();
   await view.settle();
-  assert.deepEqual(inputLabels(view.tree), editors, 'pickup asks for no delivery address at all');
+  assert.deepEqual(inputLabels(view.tree), [...editors, ...paymentEditor], 'pickup asks for no delivery address at all');
   assert.match(textOf(view.tree), /No delivery fee/);
   view.host.unmount();
 });
@@ -318,5 +340,69 @@ test('Android back hides the keyboard first, then confirms before discarding che
   buttons[1].onPress();
   assert.deepEqual(view.backs, ['back']);
   assert.equal(pressBack(), false, 'a discarded draft does not ask twice');
+  view.host.unmount();
+});
+
+test('the checkout summary prices the Bag and withholds anything the server has not confirmed', async () => {
+  const view = mountScreen({ auth: readyAuth, bag: readyBag([{ productId: 'product-a', variantId: 'actual-variant-a', quantity: 2 }]),
+    catalogue: readyCatalogue, profileLoad: async () => profile.mapProfile(row) });
+  view.render();
+  await view.settle();
+  assert.equal(summaryRow(view.tree, 'Vase, quantity 2').props.accessibilityLabel, 'Vase, quantity 2. NLe 240', 'the line uses the variant price, not the parent price');
+  assert.equal(summaryRow(view.tree, 'Bag subtotal').props.accessibilityLabel, 'Bag subtotal. NLe 240');
+  assert.equal(summaryRow(view.tree, 'Delivery').props.accessibilityLabel, 'Delivery. Choose at checkout');
+  const total = summaryRow(view.tree, 'Estimated total');
+  assert.equal(total.props.accessibilityLabel, 'Estimated total. Delivery details needed');
+  assert.equal(total.props.accessibilityLiveRegion, 'polite', 'a recalculation is announced without stealing focus');
+  zones(view).props.onPress();
+  await view.settle();
+  assert.equal(summaryRow(view.tree, 'Delivery').props.accessibilityLabel, 'Delivery. NLe 40');
+  assert.equal(summaryRow(view.tree, 'Estimated total').props.accessibilityLabel, 'Estimated total. NLe 280');
+  radio(view.tree, 'Pickup').props.onPress();
+  await view.settle();
+  assert.equal(summaryRow(view.tree, 'Pickup').props.accessibilityLabel, 'Pickup. Free with pickup');
+  assert.equal(summaryRow(view.tree, 'Estimated total').props.accessibilityLabel, 'Estimated total. NLe 240');
+  assert.match(textOf(view.tree), /totals are confirmed securely when the order is placed/i);
+  view.host.unmount();
+});
+
+test('an unavailable selection keeps the estimate honest instead of totalling around it', async () => {
+  const view = mountScreen({ auth: readyAuth, bag: readyBag([{ productId: 'product-a', variantId: 'gone-variant', quantity: 1 }]),
+    catalogue: readyCatalogue, profileLoad: async () => profile.mapProfile(row) });
+  view.render();
+  await view.settle();
+  assert.match(textOf(view.tree), /Update your Bag before continuing/);
+  assert.equal(find(view.tree, element => String(element.props?.accessibilityLabel ?? '').startsWith('Vase, quantity')).props.accessibilityLabel,
+    'Vase, quantity 1. No longer available');
+  assert.equal(summaryRow(view.tree, 'Bag subtotal').props.accessibilityLabel, 'Bag subtotal. Prices unavailable yet');
+  assert.equal(summaryRow(view.tree, 'Estimated total').props.accessibilityLabel, 'Estimated total. Prices unavailable yet');
+  view.host.unmount();
+});
+
+test('mobile money is collected as settlement detail only, with reuse clearing its own error', async () => {
+  const view = mountScreen({ auth: readyAuth, bag: readyBag(oneItem), catalogue: readyCatalogue, profileLoad: async () => profile.mapProfile(row) });
+  view.render();
+  await view.settle();
+  const providers = collect(view.tree, element => element.props?.accessibilityRole === 'radio' && ['Orange Money', 'Afrimoney'].includes(String(element.props?.accessibilityLabel)));
+  assert.deepEqual(providers.map(element => element.props.accessibilityLabel), ['Orange Money', 'Afrimoney']);
+  assert.equal(providers[0].props.accessibilityState.checked, true, 'the web default provider is also the mobile default');
+  assert.match(textOf(view.tree), /No payment is collected here/i, 'no provider is presented as operational');
+  inputLabeled(view.tree, 'Mobile money number *').props.onChangeText('12345');
+  await view.settle();
+  assert.match(inputLabeled(view.tree, 'Mobile money number *').props.accessibilityHint, /Enter a Sierra Leone mobile number/);
+  const reuse = find(view.tree, element => element.props?.accessibilityRole === 'checkbox');
+  assert.equal(reuse.props.accessibilityLabel, 'Use my contact phone number');
+  reuse.props.onPress();
+  await view.settle();
+  const mirrored = inputLabeled(view.tree, 'Mobile money number *');
+  assert.equal(mirrored.props.editable, false, 'a mirrored number is not typed over');
+  assert.equal(mirrored.props.value, '+23276521208');
+  assert.equal(mirrored.props.accessibilityHint, 'Number format only; this does not verify registration with the selected provider.',
+    'the web stale payment error is not reproduced when the value changes through reuse');
+  assert.equal(textOf(view.tree).includes('Enter a Sierra Leone mobile number'), false);
+  find(view.tree, element => element.props?.accessibilityRole === 'checkbox').props.onPress();
+  await view.settle();
+  assert.equal(inputLabeled(view.tree, 'Mobile money number *').props.value, '12345', 'unchecking restores the independently entered number');
+  assert.deepEqual(duplicateKeys(view.tree), []);
   view.host.unmount();
 });

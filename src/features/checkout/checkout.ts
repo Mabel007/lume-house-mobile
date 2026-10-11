@@ -1,4 +1,5 @@
 import { getDeliveryFee, type Fulfilment } from '../../config/fulfilment';
+import { formatMoney } from '../../config/shop';
 import { normalizePhone, type Profile } from '../profile/profile';
 
 export type PaymentProvider = 'orange' | 'afri';
@@ -87,6 +88,7 @@ export function checkoutErrors(draft: CheckoutDraft): Partial<Record<CheckoutFie
 }
 
 export type EstimatedLine = { available: boolean; lineTotal: number | null };
+export type CheckoutLine = EstimatedLine & { key: string; label: string; quantity: number };
 export type Estimate = { subtotal: number | null; fee: number | null; total: number | null; complete: boolean };
 
 // An estimate for review only. place_variant_order recomputes every figure from locked database rows.
@@ -95,6 +97,17 @@ export function estimatedTotals(lines: readonly EstimatedLine[], fee: number | n
   const subtotal = lines.reduce((sum, line) => sum + (line.available ? line.lineTotal ?? 0 : 0), 0);
   if (!complete) return { subtotal: null, fee, total: null, complete: false };
   return { subtotal, fee, total: fee === null ? null : subtotal + fee, complete: true };
+}
+
+// The web Bag never claims a total it cannot resolve, and neither does this screen.
+export function estimateLabels(draft: CheckoutDraft, estimate: Estimate) {
+  const { subtotal, fee, total } = estimate;
+  return {
+    subtotal: subtotal === null ? 'Prices unavailable yet' : formatMoney(subtotal),
+    // Pickup is free because place_variant_order sets the fulfilment fee to zero, not because a courier agreed.
+    fee: fee === null ? 'Choose at checkout' : draft.fulfilment === 'pickup' ? 'Free with pickup' : formatMoney(fee),
+    total: total !== null ? formatMoney(total) : subtotal === null ? 'Prices unavailable yet' : 'Delivery details needed',
+  };
 }
 
 export function checkoutPayload(draft: CheckoutDraft) {

@@ -7,11 +7,13 @@ import { useAuth } from '../auth/AuthContext';
 import { useBag } from '../cart/BagContext';
 import { cartLine } from '../cart/cart';
 import { useProducts } from '../products/ProductContext';
+import { variantLabel } from '../products/variants';
 import { emptyProfile, type Profile } from '../profile/profile';
 import { loadProfile } from '../profile/profileRepository';
 import { getSupabaseClient } from '../../lib/supabase/client';
 import { CheckoutDetails } from './CheckoutDetails';
-import { checkoutErrors, deliveryNotice, emptyCheckout, prefillDefaults, type CheckoutDraft } from './checkout';
+import { CheckoutPayment } from './CheckoutPayment';
+import { checkoutErrors, deliveryFee, deliveryNotice, emptyCheckout, prefillDefaults, type CheckoutDraft, type CheckoutLine } from './checkout';
 
 export default function CheckoutScreen() {
   const { state: auth, busy: authBusy } = useAuth();
@@ -37,8 +39,14 @@ export default function CheckoutScreen() {
   }, []);
   const user = auth.status === 'signed-in' ? auth.user : undefined;
   const items = signedIn ? bag.state.items : [];
-  const lines = items.map(item => cartLine(item, catalogue.status === 'ready' ? catalogue.products : []));
-  const unavailable = lines.filter(line => !line.available);
+  const priced = catalogue.status === 'ready' ? catalogue.products : [];
+  const pieces: CheckoutLine[] = items.map(item => {
+    const line = cartLine(item, priced);
+    const options = line.variant ? variantLabel(line.variant) : '';
+    return { key: item.variantId, quantity: item.quantity, available: line.available, lineTotal: line.lineTotal,
+      label: `${line.product?.name ?? 'Unavailable selection'}${options ? ` · ${options}` : ''}` };
+  });
+  const unavailable = pieces.filter(piece => !piece.available);
   const busy = authBusy || bag.state.status === 'loading' || bag.state.status === 'saving' || catalogue.status === 'loading';
   return <SafeAreaView style={styles.root}><KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <ScrollView ref={scroll} contentContainerStyle={[styles.content, { paddingBottom: Math.max(56, imeHeight + 24) }]}
@@ -67,7 +75,7 @@ export default function CheckoutScreen() {
             {unavailable.length ? <Text style={styles.text}>Some selections are no longer available. Update your Bag before continuing.</Text> : null}
             <Pressable accessibilityRole="button" accessibilityLabel="Refresh Bag" accessibilityState={{ disabled: busy, busy }} disabled={busy}
               onPress={() => { refreshCatalogue(); void refresh(); }} style={styles.secondary}><Text style={styles.secondaryText}>Refresh Bag</Text></Pressable>
-            {user ? <CheckoutFlow key={user.id} userId={user.id} email={user.email ?? ''} busy={authBusy} reveal={reveal} /> : null}
+            {user ? <CheckoutFlow key={user.id} userId={user.id} email={user.email ?? ''} busy={authBusy} pieces={pieces} reveal={reveal} /> : null}
           </> : null}
           <View accessible accessibilityRole="alert" accessibilityLiveRegion="polite"
             accessibilityLabel="Order placement is not available in this build yet. Your Bag and saved details are unchanged.">
@@ -80,7 +88,7 @@ export default function CheckoutScreen() {
 }
 
 // One draft per signed-in customer: a new identity gets a new component, so no detail can carry over.
-function CheckoutFlow({ userId, email, busy, reveal }: { userId: string; email: string; busy: boolean; reveal: FieldReveal }) {
+function CheckoutFlow({ userId, email, busy, pieces, reveal }: { userId: string; email: string; busy: boolean; pieces: readonly CheckoutLine[]; reveal: FieldReveal }) {
   const [draft, setDraft] = useState<CheckoutDraft>(emptyCheckout);
   const [saved, setSaved] = useState<Profile | null>(null);
   const dirty = useRef(false);
@@ -112,8 +120,12 @@ function CheckoutFlow({ userId, email, busy, reveal }: { userId: string; email: 
       return true;
     };
   });
-  return <CheckoutDetails draft={draft} errors={checkoutErrors(draft)} notice={deliveryNotice(draft)} busy={busy} revealField={reveal}
-    onChange={changes => { dirty.current = true; setDraft(current => ({ ...current, ...changes })); }} />;
+  const errors = checkoutErrors(draft);
+  const change = (changes: Partial<CheckoutDraft>) => { dirty.current = true; setDraft(current => ({ ...current, ...changes })); };
+  return <>
+    <CheckoutDetails draft={draft} errors={errors} notice={deliveryNotice(draft)} busy={busy} revealField={reveal} onChange={change} />
+    <CheckoutPayment draft={draft} errors={errors} lines={pieces} fee={deliveryFee(draft)} busy={busy} revealField={reveal} onChange={change} />
+  </>;
 }
 
 const styles = StyleSheet.create({
