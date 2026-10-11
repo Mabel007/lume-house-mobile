@@ -1,7 +1,7 @@
 // Offline contracts only: every repository and context is mocked. No client, network, order, payment or email.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { load, hooks, find, expand, duplicateKeys } = require('./helpers/source.cjs');
+const { load, hooks, find, expand, duplicateKeys, events, pressBack, keyDown, resetEvents } = require('./helpers/source.cjs');
 
 const { deliveryConfig, getDeliveryFee } = load('src/config/fulfilment.ts');
 const checkout = load('src/features/checkout/checkout.ts');
@@ -108,26 +108,55 @@ test('the placement payload normalizes phones and trims text without carrying cl
   assert.equal(Object.hasOwn(payload, 'status'), false);
 });
 
-function mountScreen({ auth, bag, catalogue }) {
+function mountScreen({ auth, bag, catalogue, profileLoad = async () => profile.mapProfile(null) }) {
   const host = hooks();
+  const client = { identity: 'fixture-client' };
+  const view = {
+    host, tree: null, backs: [], calls: [],
+    render: () => { host.begin(); view.tree = expand(Screen({})); return view.tree; },
+    // A state change from an effect only shows up on the next render, so settle re-renders after each microtask drain.
+    settle: async () => {
+      for (let pass = 0; pass < 3; pass++) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+        host.begin();
+        view.tree = expand(Screen({}));
+      }
+      return view.tree;
+    },
+  };
   const Screen = load('src/features/checkout/CheckoutScreen.tsx', {
     react: { ...host.react, useCallback: fn => fn },
-    'expo-router': { Link: 'Link', useFocusEffect: () => {} },
+    'expo-router': { Link: 'Link', useFocusEffect: () => {}, router: { back: () => view.backs.push('back') } },
+    '../../lib/supabase/client': { getSupabaseClient: () => client },
+    '../profile/profileRepository': { loadProfile: async (loaded, id, active) => { view.calls.push({ loaded, id, active: typeof active }); return profileLoad(id, active); } },
     '../auth/AuthContext': { useAuth: auth },
     '../cart/BagContext': { useBag: bag },
     '../products/ProductContext': { useProducts: catalogue },
   }).default;
-  const render = () => { host.begin(); return expand(Screen({})); };
-  return { host, render };
+  return view;
 }
 const textOf = element => {
   if (typeof element === 'string') return element;
   if (!element || typeof element !== 'object') return '';
   return [element.props?.children].flat(Infinity).map(textOf).join(' ');
 };
+function collect(element, predicate, found = []) {
+  if (!element || typeof element !== 'object') return found;
+  if (predicate(element)) found.push(element);
+  for (const child of [element.props?.children].flat(Infinity)) collect(child, predicate, found);
+  return found;
+}
 const variantRow = { id: 'actual-variant-a', product_id: 'product-a', options: {}, is_default: true,
   price_cents: 12000, currency: 'NLE', active: true, inventory_policy: 'untracked' };
 const readyProducts = [{ id: 'product-a', name: 'Vase', price: 12000, variants: variants.parseVariants([variantRow]) }];
+const readyAuth = () => ({ state: { status: 'signed-in', user: { id: 'customer-a', email: 'customer-a@example.invalid' } }, busy: false });
+const readyBag = (items) => () => ({ signedIn: true, state: { status: 'ready', items, message: null, canRetry: false }, refresh: async () => {}, retry: async () => false, dispatch: async () => false });
+const readyCatalogue = () => ({ state: { status: 'ready', products: readyProducts }, refresh: () => {} });
+const oneItem = [{ productId: 'product-a', variantId: 'actual-variant-a', quantity: 1 }];
+const inputLabeled = (tree, label) => find(tree, element => element.type === 'TextInput' && element.props?.accessibilityLabel === label);
+const inputLabels = tree => collect(tree, element => element.type === 'TextInput').map(element => element.props.accessibilityLabel);
+const editors = ['Full name *', 'Phone number *', 'Email *'];
+const deliveryEditors = [...editors, 'Street address / landmark *', 'Area / community *', 'City / town *', 'Delivery instructions (optional)'];
 
 test('the checkout foundation resolves session, Bag and catalogue state without offering placement', () => {
   const signedOut = mountScreen({ auth: () => ({ state: { status: 'signed-out' }, busy: false }),
@@ -150,20 +179,144 @@ test('the checkout foundation resolves session, Bag and catalogue state without 
   tree = loaded.render();
   assert.match(textOf(tree), /1 selection\s+in your Bag/);
   assert.match(textOf(tree), /Order placement is not available in this build yet/);
-  const notice = find(tree, element => element.props?.accessibilityRole === 'alert');
+  const notice = find(tree, element => element.props?.accessibilityRole === 'alert' && element.props?.accessible === true);
   assert.equal(notice.props.accessible, true, 'the notice is a real screen-reader focus stop');
   assert.equal(notice.props.accessibilityLiveRegion, 'polite');
   assert.equal(cart.cartLine({ productId: 'product-a', variantId: 'actual-variant-a', quantity: 2 }, readyProducts).lineTotal, 24000);
   signedOut.host.unmount(); empty.host.unmount(); loaded.host.unmount();
 });
 
-test('the checkout screen exposes no inputs, no place-order control and no duplicate keys', () => {
-  const view = mountScreen({ auth: () => ({ state: { status: 'signed-in', user: { id: 'customer-a' } }, busy: false }),
-    bag: () => ({ signedIn: true, state: { status: 'ready', items: [{ productId: 'product-a', variantId: 'actual-variant-a', quantity: 1 }], message: null, canRetry: false }, refresh: async () => {}, retry: async () => false, dispatch: async () => false }),
-    catalogue: () => ({ state: { status: 'ready', products: readyProducts }, refresh: () => {} }) });
-  const tree = view.render();
-  assert.equal(find(tree, element => element.type === 'TextInput'), undefined, 'details arrive in the next slice');
-  assert.doesNotMatch(textOf(tree), /place order|pay now|order placed|success/i);
-  assert.deepEqual(duplicateKeys(tree), []);
+test('checkout edits apply here only: contact and delivery editors, no payment or placement controls', async () => {
+  const view = mountScreen({ auth: readyAuth, bag: readyBag(oneItem), catalogue: readyCatalogue });
+  view.render();
+  await view.settle();
+  assert.deepEqual(inputLabels(view.tree), deliveryEditors, 'delivery is the default fulfilment');
+  assert.equal(view.calls.length, 1, 'the saved profile is read once per signed-in customer');
+  assert.equal(view.calls[0].id, 'customer-a');
+  assert.equal(view.calls[0].active, 'function', 'the repository is given an ownership guard');
+  assert.ok(collect(view.tree, element => element.type === 'TextInput').every(input => input.props.accessibilityLabel.length > 0), 'every editor is labelled for screen readers');
+  assert.equal(inputLabeled(view.tree, 'Email *').props.keyboardType, 'email-address');
+  assert.equal(inputLabeled(view.tree, 'Phone number *').props.keyboardType, 'phone-pad');
+  assert.equal(inputLabeled(view.tree, 'Delivery instructions (optional)').props.multiline, true);
+  assert.equal(inputLabeled(view.tree, 'Delivery instructions (optional)').props.maxLength, 500);
+  assert.equal(inputLabeled(view.tree, 'Full name *').props.maxLength, 200);
+  const text = textOf(view.tree);
+  assert.match(text, /Contact information/);
+  assert.match(text, /Delivery or pickup/);
+  assert.doesNotMatch(text, /Orange Money|Afrimoney|Payment number|Place order|Pay now|order placed|success/i, 'payment and placement arrive in later slices');
+  assert.deepEqual(duplicateKeys(view.tree), []);
+  view.host.unmount();
+});
+
+test('saved profile defaults prefill the draft once and are never written back', async () => {
+  const saved = profile.mapProfile(row);
+  const view = mountScreen({ auth: readyAuth, bag: readyBag(oneItem), catalogue: readyCatalogue, profileLoad: async () => saved });
+  view.render();
+  await view.settle();
+  assert.equal(inputLabeled(view.tree, 'Full name *').props.value, 'Aisha Sesay');
+  assert.equal(inputLabeled(view.tree, 'Phone number *').props.value, '+23276521208');
+  assert.equal(inputLabeled(view.tree, 'Email *').props.value, 'customer-a@example.invalid');
+  assert.equal(inputLabeled(view.tree, 'Street address / landmark *').props.value, 'Landmark');
+  assert.equal(inputLabeled(view.tree, 'Area / community *').props.value, 'Goderich');
+  assert.equal(inputLabeled(view.tree, 'City / town *').props.value, 'Freetown');
+  assert.equal(inputLabeled(view.tree, 'Delivery instructions (optional)').props.value, '', 'optional free text is not filled from the profile');
+  inputLabeled(view.tree, 'Full name *').props.onChangeText('Aisha M. Sesay');
+  await view.settle();
+  assert.equal(inputLabeled(view.tree, 'Full name *').props.value, 'Aisha M. Sesay');
+  assert.equal(saved.full_name, 'Aisha Sesay', 'the saved profile is never mutated by a checkout edit');
+  view.host.unmount();
+});
+
+test('a late profile load cannot overwrite a typed checkout edit', async () => {
+  let resolve;
+  const pending = new Promise(yes => { resolve = yes; });
+  const view = mountScreen({ auth: readyAuth, bag: readyBag(oneItem), catalogue: readyCatalogue, profileLoad: () => pending });
+  view.render();
+  await view.settle();
+  assert.equal(inputLabeled(view.tree, 'Full name *').props.value, '', 'nothing is prefilled before the profile arrives');
+  inputLabeled(view.tree, 'Full name *').props.onChangeText('Typed while loading');
+  view.render();
+  resolve(profile.mapProfile(row));
+  await view.settle();
+  assert.equal(inputLabeled(view.tree, 'Full name *').props.value, 'Typed while loading', 'an edit always beats a late default');
+  assert.equal(inputLabeled(view.tree, 'Street address / landmark *').props.value, '', 'once the customer is typing, nothing else is inserted under them either');
+  assert.equal(view.calls.length, 1, 'the profile is still read exactly once');
+  view.host.unmount();
+});
+
+test('pickup hides the delivery editors and delivery zones state their provisional fee', async () => {
+  const view = mountScreen({ auth: readyAuth, bag: readyBag(oneItem), catalogue: readyCatalogue });
+  view.render();
+  await view.settle();
+  const zones = collect(view.tree, element => element.props?.accessibilityRole === 'radio' && String(element.props?.accessibilityLabel).includes('Delivery NLe'));
+  assert.deepEqual(zones.map(element => element.props.accessibilityLabel), [
+    'Goderich to Lumley. Delivery NLe 40.',
+    'Lumley to Congo Cross, including Aberdeen. Delivery NLe 50.',
+    'Congo Cross to Central Freetown. Delivery NLe 60.',
+  ], 'screen readers hear the provisional fee with the coverage it belongs to');
+  assert.match(textOf(view.tree), /provisional/i, 'the fee copy never claims authority');
+  zones[1].props.onPress();
+  await view.settle();
+  const chosen = collect(view.tree, element => element.props?.accessibilityRole === 'radio' && element.props?.accessibilityState?.checked === true);
+  assert.equal(chosen.length, 2, 'one fulfilment and one zone are checked');
+  assert.equal(chosen[1].props.accessibilityLabel, 'Lumley to Congo Cross, including Aberdeen. Delivery NLe 50.');
+  const pickup = find(view.tree, element => element.props?.accessibilityRole === 'radio' && element.props?.accessibilityLabel === 'Pickup');
+  pickup.props.onPress();
+  await view.settle();
+  assert.deepEqual(inputLabels(view.tree), editors, 'pickup asks for no delivery address at all');
+  assert.match(textOf(view.tree), /No delivery fee/);
+  view.host.unmount();
+});
+
+test('invalid checkout fields are announced where the mistake was made', async () => {
+  const view = mountScreen({ auth: readyAuth, bag: readyBag(oneItem), catalogue: readyCatalogue });
+  view.render();
+  await view.settle();
+  assert.equal(inputLabeled(view.tree, 'Email *').props.value, 'customer-a@example.invalid', 'the account email is a starting point, not an error');
+  assert.equal(inputLabeled(view.tree, 'Email *').props.accessibilityHint, 'Where your order confirmation is sent.');
+  assert.equal(inputLabeled(view.tree, 'Full name *').props.accessibilityHint, 'Enter your full name.', 'the hint carries the live error to the field');
+  assert.equal(inputLabeled(view.tree, 'Phone number *').props.accessibilityHint, 'Enter a Sierra Leone phone number, for example +23276521208.');
+  const alerts = collect(view.tree, element => element.props?.accessibilityRole === 'alert').map(element => textOf(element));
+  assert.ok(alerts.includes('Choose a supported Freetown delivery zone.'));
+  assert.ok(alerts.includes('Enter a Sierra Leone phone number, for example +23276521208.'));
+  assert.equal(inputLabeled(view.tree, 'City / town *').props.accessibilityHint, 'Enter your city or town.');
+  inputLabeled(view.tree, 'City / town *').props.onChangeText('Bo');
+  await view.settle();
+  assert.equal(inputLabeled(view.tree, 'City / town *').props.accessibilityHint, 'Delivery is currently limited to Freetown.');
+  assert.ok(collect(view.tree, element => element.props?.accessibilityRole === 'alert').map(element => textOf(element)).includes('Delivery is currently limited to Freetown.'));
+  inputLabeled(view.tree, 'City / town *').props.onChangeText('Freetown');
+  zones(view).props.onPress();
+  await view.settle();
+  assert.ok(!collect(view.tree, element => element.props?.accessibilityRole === 'alert').map(element => textOf(element)).includes('Delivery is currently limited to Freetown.'), 'leaving the service area re-clears the notice');
+  view.host.unmount();
+});
+function zones(view) {
+  return find(view.tree, element => element.props?.accessibilityRole === 'radio' && String(element.props?.accessibilityLabel).startsWith('Goderich to Lumley.'));
+}
+
+test('Android back hides the keyboard first, then confirms before discarding checkout edits', async () => {
+  const view = mountScreen({ auth: readyAuth, bag: readyBag(oneItem), catalogue: readyCatalogue });
+  view.render();
+  await view.settle();
+  resetEvents();
+  assert.equal(pressBack(), false, 'an untouched draft leaves checkout without a prompt');
+  inputLabeled(view.tree, 'Full name *').props.onChangeText('Changed but unsaved');
+  await view.settle();
+  keyDown('keyboardDidShow', { endCoordinates: { height: 620 } });
+  view.render();
+  assert.equal(pressBack(), true, 'the first back is spent on the keyboard');
+  assert.equal(events.dismissed, 1);
+  assert.equal(events.alerts.length, 0, 'a keyboard dismissal is never treated as leaving checkout');
+  keyDown('keyboardDidHide', {});
+  view.render();
+  assert.equal(pressBack(), true);
+  assert.equal(events.alerts.length, 1);
+  assert.equal(events.alerts[0][0], 'Leave checkout?');
+  const buttons = events.alerts[0][2];
+  assert.equal(buttons.length, 2);
+  assert.deepEqual(view.backs, [], 'the prompt alone does not leave');
+  buttons[1].onPress();
+  assert.deepEqual(view.backs, ['back']);
+  assert.equal(pressBack(), false, 'a discarded draft does not ask twice');
   view.host.unmount();
 });

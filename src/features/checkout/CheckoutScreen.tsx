@@ -1,12 +1,17 @@
-import { useCallback } from 'react';
-import { Link, useFocusEffect } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link, router, useFocusEffect } from 'expo-router';
+import { Alert, BackHandler, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ActionButton } from '../../components/ActionButton';
+import { revealField as revealIn, type FieldReveal, type RevealerNode, type ScrollFrame } from '../../lib/scrollReveal';
 import { useAuth } from '../auth/AuthContext';
 import { useBag } from '../cart/BagContext';
 import { cartLine } from '../cart/cart';
 import { useProducts } from '../products/ProductContext';
+import { emptyProfile, type Profile } from '../profile/profile';
+import { loadProfile } from '../profile/profileRepository';
+import { getSupabaseClient } from '../../lib/supabase/client';
+import { CheckoutDetails } from './CheckoutDetails';
+import { checkoutErrors, deliveryNotice, emptyCheckout, prefillDefaults, type CheckoutDraft } from './checkout';
 
 export default function CheckoutScreen() {
   const { state: auth, busy: authBusy } = useAuth();
@@ -14,14 +19,34 @@ export default function CheckoutScreen() {
   const { state: catalogue, refresh: refreshCatalogue } = useProducts();
   const { refresh, signedIn } = bag;
   useFocusEffect(useCallback(() => { if (signedIn) void refresh(); }, [signedIn, refresh]));
+  const scroll = useRef<ScrollView>(null);
+  const content = useRef<View>(null);
+  const focused = useRef<RevealerNode | null>(null);
+  const frame = useRef<ScrollFrame>({ offset: 0, viewport: 0 });
+  const [imeHeight, setImeHeight] = useState(0);
+  const reveal: FieldReveal = node => {
+    if (node) focused.current = node;
+    revealIn({ scroll: scroll.current, content: content.current, frame: frame.current }, focused.current);
+  };
+  useEffect(() => {
+    // Android overlays the keyboard instead of resizing the window, so the scroll view owns the inset.
+    if (Platform.OS === 'ios') return;
+    const shown = Keyboard.addListener('keyboardDidShow', event => { const height = event.endCoordinates?.height ?? 0; frame.current.keyboard = height; setImeHeight(height); });
+    const hidden = Keyboard.addListener('keyboardDidHide', () => { frame.current.keyboard = 0; setImeHeight(0); });
+    return () => { shown.remove(); hidden.remove(); };
+  }, []);
+  const user = auth.status === 'signed-in' ? auth.user : undefined;
   const items = signedIn ? bag.state.items : [];
   const lines = items.map(item => cartLine(item, catalogue.status === 'ready' ? catalogue.products : []));
   const unavailable = lines.filter(line => !line.available);
   const busy = authBusy || bag.state.status === 'loading' || bag.state.status === 'saving' || catalogue.status === 'loading';
-  return <SafeAreaView style={styles.root}>
-    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-      <Text accessibilityElementsHidden style={styles.eyebrow}>CHECKOUT</Text>
-      <View style={styles.flow}>
+  return <SafeAreaView style={styles.root}><KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <ScrollView ref={scroll} contentContainerStyle={[styles.content, { paddingBottom: Math.max(56, imeHeight + 24) }]}
+      keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" scrollEventThrottle={16}
+      onScroll={event => { frame.current.offset = event.nativeEvent.contentOffset.y; }}
+      onLayout={event => { frame.current.viewport = event.nativeEvent.layout.height; reveal(null); }} onContentSizeChange={() => reveal(null)}>
+      <View ref={content} style={styles.flow}>
+        <Text accessibilityElementsHidden style={styles.eyebrow}>CHECKOUT</Text>
         <Text accessibilityRole="header" style={styles.title}>Checkout.</Text>
         <Link href="/bag" asChild><Pressable accessibilityRole="link" style={styles.link}><Text style={styles.text}>Back to your Bag</Text></Pressable></Link>
         {auth.status === 'restoring' ? <Text style={styles.text}>Restoring your session…</Text> : !signedIn ? <>
@@ -30,7 +55,8 @@ export default function CheckoutScreen() {
         </> : <>
           {busy && !items.length ? <Text style={styles.text}>Loading your Bag…</Text> : null}
           {bag.state.message ? <Text style={styles.text}>{bag.state.message}</Text> : null}
-          {bag.state.canRetry ? <ActionButton label="Retry saved change" busy={busy} disabled={busy} secondary onPress={() => { void bag.retry(); }} /> : null}
+          {bag.state.canRetry ? <Pressable accessibilityRole="button" accessibilityLabel="Retry saved change" accessibilityState={{ disabled: busy, busy }} disabled={busy}
+            onPress={() => { void bag.retry(); }} style={styles.secondary}><Text style={styles.secondaryText}>Retry saved change</Text></Pressable> : null}
           {catalogue.status === 'error' ? <Text style={styles.text}>Current prices and selections could not be loaded. Your Bag is still saved.</Text> : null}
           {signedIn && bag.state.status === 'ready' && !items.length ? <>
             <Text style={styles.text}>Your Bag is empty. Add something from the collection before checking out.</Text>
@@ -39,7 +65,9 @@ export default function CheckoutScreen() {
           {items.length ? <>
             <Text style={styles.name}>{`${items.length === 1 ? '1 selection' : `${items.length} selections`} in your Bag.`}</Text>
             {unavailable.length ? <Text style={styles.text}>Some selections are no longer available. Update your Bag before continuing.</Text> : null}
-            <ActionButton label="Refresh Bag" busy={busy} disabled={busy} secondary onPress={() => { refreshCatalogue(); void refresh(); }} />
+            <Pressable accessibilityRole="button" accessibilityLabel="Refresh Bag" accessibilityState={{ disabled: busy, busy }} disabled={busy}
+              onPress={() => { refreshCatalogue(); void refresh(); }} style={styles.secondary}><Text style={styles.secondaryText}>Refresh Bag</Text></Pressable>
+            {user ? <CheckoutFlow key={user.id} userId={user.id} email={user.email ?? ''} busy={authBusy} reveal={reveal} /> : null}
           </> : null}
           <View accessible accessibilityRole="alert" accessibilityLiveRegion="polite"
             accessibilityLabel="Order placement is not available in this build yet. Your Bag and saved details are unchanged.">
@@ -48,19 +76,58 @@ export default function CheckoutScreen() {
         </>}
       </View>
     </ScrollView>
-  </SafeAreaView>;
+  </KeyboardAvoidingView></SafeAreaView>;
+}
+
+// One draft per signed-in customer: a new identity gets a new component, so no detail can carry over.
+function CheckoutFlow({ userId, email, busy, reveal }: { userId: string; email: string; busy: boolean; reveal: FieldReveal }) {
+  const [draft, setDraft] = useState<CheckoutDraft>(emptyCheckout);
+  const [saved, setSaved] = useState<Profile | null>(null);
+  const dirty = useRef(false);
+  const keyboardOpen = useRef(false);
+  const backPress = useRef<() => boolean>(() => false);
+  useEffect(() => {
+    let active = true;
+    // A missing or unreadable profile simply leaves the draft empty; checkout never blocks on saved defaults.
+    void loadProfile(getSupabaseClient(), userId, () => active).then(profile => { if (active) setSaved(profile); })
+      .catch(() => { if (active) setSaved(emptyProfile); });
+    return () => { active = false; };
+  }, [userId]);
+  useEffect(() => { if (saved && !dirty.current) setDraft(current => prefillDefaults(current, saved, email)); }, [saved, email]);
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => backPress.current());
+    const shown = Keyboard.addListener('keyboardDidShow', () => { keyboardOpen.current = true; });
+    const hidden = Keyboard.addListener('keyboardDidHide', () => { keyboardOpen.current = false; });
+    return () => { subscription.remove(); shown.remove(); hidden.remove(); };
+  }, []);
+  useEffect(() => {
+    backPress.current = () => {
+      // Android can spend the first Back on hiding the keyboard, so never treat that as leaving checkout.
+      if (keyboardOpen.current) { Keyboard.dismiss(); return true; }
+      if (!dirty.current) return false;
+      Alert.alert('Leave checkout?', 'These checkout details are not saved with an order yet. Leaving now discards them.', [
+        { text: 'Keep editing', style: 'cancel' },
+        { text: 'Leave checkout', style: 'destructive', onPress: () => { dirty.current = false; router.back(); } },
+      ]);
+      return true;
+    };
+  });
+  return <CheckoutDetails draft={draft} errors={checkoutErrors(draft)} notice={deliveryNotice(draft)} busy={busy} revealField={reveal}
+    onChange={changes => { dirty.current = true; setDraft(current => ({ ...current, ...changes })); }} />;
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#F6F2EB' },
   content: { padding: 24, paddingBottom: 56, maxWidth: 650, width: '100%', alignSelf: 'center' },
   flow: { gap: 16 },
-  eyebrow: { fontSize: 12, letterSpacing: 1.6, color: '#797566' },
-  title: { fontSize: 30, color: '#292820' },
-  text: { fontSize: 16, lineHeight: 24, color: '#423F38' },
+  eyebrow: { fontSize: 11, fontWeight: '600', letterSpacing: 1.9, color: '#665F52' },
+  title: { fontSize: 30, lineHeight: 36, letterSpacing: -1, color: '#292820' },
+  text: { fontSize: 16, lineHeight: 25, color: '#423F38' },
   name: { fontSize: 19, fontWeight: '600', color: '#292820' },
-  notice: { fontSize: 16, lineHeight: 24, color: '#535B40', fontWeight: '600' },
+  notice: { fontSize: 16, lineHeight: 25, color: '#535B40', fontWeight: '600' },
   link: { minHeight: 48, justifyContent: 'center' },
+  secondary: { minHeight: 48, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 8, backgroundColor: '#EBE5D9', alignItems: 'center' },
+  secondaryText: { color: '#423F38', fontSize: 15, fontWeight: '600' },
   signIn: { minHeight: 48, borderRadius: 8, padding: 16, backgroundColor: '#535B40', alignItems: 'center' },
   signInText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
 });

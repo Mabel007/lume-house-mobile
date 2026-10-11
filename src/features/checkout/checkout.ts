@@ -34,6 +34,16 @@ export function paymentPhone(draft: CheckoutDraft): string {
   return draft.reuse_phone ? draft.contact_phone : draft.payment_phone;
 }
 
+const prefillFields = ['full_name', 'contact_phone', 'email', 'street', 'area', 'city'] as const;
+
+// One-shot prefill: only an untouched field receives a saved default, and the draft is never written back to the profile.
+export function prefillDefaults(draft: CheckoutDraft, profile: Profile, email: string): CheckoutDraft {
+  const source = checkoutDefaults(profile, email);
+  const next = { ...draft };
+  for (const key of prefillFields) if (!next[key].trim() && source[key].trim()) next[key] = source[key];
+  return next;
+}
+
 export function deliveryFee(draft: CheckoutDraft): number | null {
   return getDeliveryFee(draft.fulfilment, draft.city, draft.zone);
 }
