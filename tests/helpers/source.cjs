@@ -45,7 +45,7 @@ function load(file, overrides = {}) {
   return fixture.exports;
 }
 function hooks() {
-  const slots = []; const effects = []; let index = 0; let effect = 0;
+  const slots = []; const effects = []; const stores = []; let index = 0; let effect = 0;
   return { begin: () => { index = 0; effect = 0; }, react: {
     useState: initial => {
       const slot = index++;
@@ -53,6 +53,13 @@ function hooks() {
       return [slots[slot], value => { slots[slot] = typeof value === 'function' ? value(slots[slot]) : value; }];
     }, useCallback: fn => fn,
     useRef: initial => { const slot = index++; if (!(slot in slots)) slots[slot] = { current: initial }; return slots[slot]; },
+    // The snapshot is re-read on every render, as React does. The listener is a placeholder because this
+    // harness re-renders explicitly; an external store's change therefore appears on the next render.
+    useSyncExternalStore: (subscribe, getSnapshot) => {
+      const slot = index++;
+      if (!(slot in slots)) { const entry = { unsubscribe: subscribe(() => {}) }; slots[slot] = entry; stores.push(entry); }
+      return getSnapshot();
+    },
     useEffect: (fn, deps) => {
       const slot = effect++;
       const previous = effects[slot];
@@ -62,7 +69,10 @@ function hooks() {
         effects[slot] = { deps, cleanup: fn() };
       }
     },
-  }, unmount: () => { effects.splice(0).forEach(entry => entry?.cleanup?.()); } };
+  }, unmount: () => {
+    effects.splice(0).forEach(entry => entry?.cleanup?.());
+    stores.splice(0).forEach(entry => entry?.unsubscribe?.());
+  } };
 }
 function find(element, predicate) {
   if (!element || typeof element !== 'object') return undefined;

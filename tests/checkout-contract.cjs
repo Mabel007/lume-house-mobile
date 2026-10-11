@@ -134,11 +134,36 @@ test('the placement payload normalizes phones and trims text without carrying cl
   assert.equal(Object.hasOwn(payload, 'status'), false);
 });
 
-function mountScreen({ auth, bag, catalogue, profileLoad = async () => profile.mapProfile(null) }) {
+// The controller only ever sees this client, so a screen test can read exactly what left the draft.
+const placedRow = { id: '11111111-1111-4111-8111-111111111111', reference: 'LH-0123456789ABCDEF', total: 16000,
+  currency: 'NLE', status: 'placed', payment_status: 'awaiting_payment' };
+const queued = { data: { order: placedRow, email_status: 'queued' }, error: null };
+function fakeBackend({ responses = [], read = { data: null, error: null } } = {}) {
+  const calls = { invokes: [], reads: [] };
+  const client = {
+    auth: { getSession: async () => ({ data: { session: { user: { id: 'customer-a' }, access_token: 'synthetic-token' } }, error: null }) },
+    functions: { invoke: async (name, options) => { calls.invokes.push({ name, options }); const next = responses.shift(); return next === undefined ? queued : next; } },
+    from: () => {
+      const chain = { select: () => chain, eq: (column, value) => { calls.reads.push({ column, value }); return chain; },
+        maybeSingle: () => chain, setHeader: () => Promise.resolve(read) };
+      return chain;
+    },
+  };
+  return { client, calls };
+}
+function memoryStore(initial = {}) {
+  const values = { ...initial };
+  return { values, api: { getItem: async key => (key in values ? values[key] : null),
+    setItem: async (key, value) => { values[key] = value; }, removeItem: async key => { delete values[key]; } } };
+}
+let issued = 0;
+const nextId = () => `00000000-0000-4000-8000-${String(++issued).padStart(12, '0')}`;
+
+function mountScreen({ auth, bag, catalogue, profileLoad = async () => profile.mapProfile(null), backend = fakeBackend(),
+  store = memoryStore(), newId = nextId }) {
   const host = hooks();
-  const client = { identity: 'fixture-client' };
   const view = {
-    host, tree: null, backs: [], calls: [],
+    host, tree: null, backs: [], calls: [], store: store.values, backend,
     render: () => { host.begin(); view.tree = expand(Screen({})); return view.tree; },
     // A state change from an effect only shows up on the next render, so settle re-renders after each microtask drain.
     settle: async () => {
@@ -153,7 +178,10 @@ function mountScreen({ auth, bag, catalogue, profileLoad = async () => profile.m
   const Screen = load('src/features/checkout/CheckoutScreen.tsx', {
     react: { ...host.react, useCallback: fn => fn },
     'expo-router': { Link: 'Link', useFocusEffect: () => {}, router: { back: () => view.backs.push('back') } },
-    '../../lib/supabase/client': { getSupabaseClient: () => client },
+    'expo-crypto': { randomUUID: newId },
+    // A default-imported module arrives here unwrapped: the loader's interop adds the `default` key.
+    '@react-native-async-storage/async-storage': store.api,
+    '../../lib/supabase/client': { getSupabaseClient: () => backend.client },
     '../profile/profileRepository': { loadProfile: async (loaded, id, active) => { view.calls.push({ loaded, id, active: typeof active }); return profileLoad(id, active); } },
     '../auth/AuthContext': { useAuth: auth },
     '../cart/BagContext': { useBag: bag },
@@ -186,8 +214,11 @@ const paymentEditor = ['Mobile money number *'];
 const deliveryEditors = [...editors, 'Street address / landmark *', 'Area / community *', 'City / town *', 'Delivery instructions (optional)'];
 const summaryRow = (tree, label) => find(tree, element => element.props?.accessible === true && String(element.props?.accessibilityLabel ?? '').startsWith(`${label}.`));
 const radio = (tree, label) => find(tree, element => element.props?.accessibilityRole === 'radio' && element.props?.accessibilityLabel === label);
+const button = (tree, label) => find(tree, element => element.props?.accessibilityRole === 'button' && element.props?.accessibilityLabel === label);
+const placeButton = tree => button(tree, 'Place order');
+const statusAlert = tree => find(tree, element => element.props?.accessibilityRole === 'alert' && element.props?.accessible === true);
 
-test('the checkout foundation resolves session, Bag and catalogue state without offering placement', () => {
+test('the checkout foundation resolves session, Bag and catalogue state before an order is placed', () => {
   const signedOut = mountScreen({ auth: () => ({ state: { status: 'signed-out' }, busy: false }),
     bag: () => ({ signedIn: false, state: { status: 'ready', items: [], message: null, canRetry: false }, refresh: async () => {}, retry: async () => false, dispatch: async () => false }),
     catalogue: () => ({ state: { status: 'ready', products: [] }, refresh: () => {} }) });
@@ -207,15 +238,13 @@ test('the checkout foundation resolves session, Bag and catalogue state without 
     catalogue: () => ({ state: { status: 'ready', products: readyProducts }, refresh: () => {} }) });
   tree = loaded.render();
   assert.match(textOf(tree), /1 selection\s+in your Bag/);
-  assert.match(textOf(tree), /Order placement is not available in this build yet/);
-  const notice = find(tree, element => element.props?.accessibilityRole === 'alert' && element.props?.accessible === true);
-  assert.equal(notice.props.accessible, true, 'the notice is a real screen-reader focus stop');
-  assert.equal(notice.props.accessibilityLiveRegion, 'polite');
+  assert.match(textOf(tree), /Payment awaits confirmation\. Placing an order saves your order and requests a confirmation email/);
+  assert.equal(placeButton(tree).props.disabled, true, 'an incomplete draft cannot place an order');
   assert.equal(cart.cartLine({ productId: 'product-a', variantId: 'actual-variant-a', quantity: 2 }, readyProducts).lineTotal, 24000);
   signedOut.host.unmount(); empty.host.unmount(); loaded.host.unmount();
 });
 
-test('checkout edits apply here only: contact, delivery and money editors with no placement control', async () => {
+test('checkout edits apply here only: contact, delivery and money editors beside one honest placement control', async () => {
   const view = mountScreen({ auth: readyAuth, bag: readyBag(oneItem), catalogue: readyCatalogue });
   view.render();
   await view.settle();
@@ -234,8 +263,8 @@ test('checkout edits apply here only: contact, delivery and money editors with n
   assert.match(text, /Contact information/);
   assert.match(text, /Delivery or pickup/);
   assert.match(text, /Mobile money/);
-  assert.doesNotMatch(text, /Place order|Pay now|order placed|payment confirmed|paid/i, 'placement arrives in the next slice');
-  assert.match(text, /Order placement is not available in this build yet/);
+  assert.ok(placeButton(view.tree), 'placement is offered on this screen now');
+  assert.doesNotMatch(text, /Pay now|Payment successful|payment confirmed|Order paid|Email sent/i, 'placement never claims money it did not take or an email it did not prove');
   assert.deepEqual(duplicateKeys(view.tree), []);
   view.host.unmount();
 });
@@ -301,7 +330,7 @@ test('pickup hides the delivery editors and delivery zones state their provision
 });
 
 const fieldAlerts = tree => collect(tree, element => element.props?.accessibilityRole === 'alert')
-  .map(textOf).filter(text => !text.startsWith('Order placement is not available'));
+  .map(textOf).filter(text => !text.startsWith('Payment awaits confirmation'));
 
 test('an untouched form stays quiet and a field reports only once the customer has left it', async () => {
   const view = mountScreen({ auth: readyAuth, bag: readyBag(oneItem), catalogue: readyCatalogue });
@@ -414,7 +443,7 @@ test('the checkout summary prices the Bag and withholds anything the server has 
   await view.settle();
   assert.equal(summaryRow(view.tree, 'Pickup').props.accessibilityLabel, 'Pickup. Free with pickup');
   assert.equal(summaryRow(view.tree, 'Estimated total').props.accessibilityLabel, 'Estimated total. NLe 240');
-  assert.match(textOf(view.tree), /totals are confirmed securely when the order is placed/i);
+  assert.match(textOf(view.tree), /totals are confirmed by the shop when the order is placed/i);
   view.host.unmount();
 });
 
@@ -458,4 +487,186 @@ test('mobile money is collected as settlement detail only, with reuse clearing i
   assert.equal(inputLabeled(view.tree, 'Mobile money number *').props.value, '12345', 'unchecking restores the independently entered number');
   assert.deepEqual(duplicateKeys(view.tree), []);
   view.host.unmount();
+});
+
+const deferred = () => {
+  let resolve;
+  const promise = new Promise(yes => { resolve = yes; });
+  return { promise, resolve };
+};
+const requestIdFor = 'lume:checkout-request:customer-a';
+const refusal = (status, error) => ({ data: null, error: { context: { status, json: async () => (error ? { error } : {}) } } });
+
+// The saved profile prefills everything but the settlement number and the zone, so this is the whole gap
+// between arriving at checkout and being allowed to place.
+async function readyToPlace(view) {
+  inputLabeled(view.tree, 'Mobile money number *').props.onChangeText('+23276521208');
+  await view.settle();
+  zones(view).props.onPress();
+  await view.settle();
+}
+
+test('a complete draft is the only thing that enables placement, and pressing it reveals what is missing', async () => {
+  const backend = fakeBackend();
+  const view = mountScreen({ auth: readyAuth, bag: readyBag(oneItem), catalogue: readyCatalogue, backend, profileLoad: async () => profile.mapProfile(row) });
+  view.render();
+  await view.settle();
+  assert.equal(placeButton(view.tree).props.disabled, true, 'no zone means no fee, so no order can be placed');
+  placeButton(view.tree).props.onPress();
+  await view.settle();
+  assert.equal(backend.calls.invokes.length, 0, 'a draft the trusted rules reject never reaches the network');
+  assert.deepEqual(fieldAlerts(view.tree).sort(), [
+    'Choose a supported Freetown delivery zone.',
+    'Enter a Sierra Leone mobile number, for example +23276521208.',
+    'Please complete the highlighted checkout details first.',
+  ], 'pressing Place order makes every remaining problem visible instead of failing silently');
+  await readyToPlace(view);
+  assert.equal(placeButton(view.tree).props.disabled, false);
+  assert.equal(placeButton(view.tree).props.accessibilityState.disabled, false, 'a screen reader hears the button as enabled too');
+  view.host.unmount();
+});
+
+test('placing an order calls the shared order service with no client money and shows only what came back', async () => {
+  const backend = fakeBackend();
+  let refreshes = 0;
+  const view = mountScreen({ auth: readyAuth, catalogue: readyCatalogue, backend, profileLoad: async () => profile.mapProfile(row),
+    bag: () => ({ signedIn: true, state: { status: 'ready', items: oneItem, message: null, canRetry: false },
+      refresh: async () => { refreshes++; }, retry: async () => false, dispatch: async () => false }) });
+  view.render();
+  await view.settle();
+  await readyToPlace(view);
+  placeButton(view.tree).props.onPress();
+  await view.settle();
+  assert.equal(backend.calls.invokes.length, 1);
+  assert.equal(backend.calls.invokes[0].name, 'place-order', 'mobile places through the same function the web uses');
+  assert.deepEqual(plain(Object.keys(backend.calls.invokes[0].options.body).sort()), ['cart_version', 'checkout', 'expected_cart', 'request_id']);
+  assert.equal(backend.calls.invokes[0].options.body.cart_version, 2);
+  const sent = backend.calls.invokes[0].options.body.checkout;
+  assert.deepEqual(plain(Object.keys(sent).sort()),
+    ['area', 'city', 'contact_phone', 'email', 'fulfilment', 'full_name', 'instructions', 'payment_phone', 'provider', 'street', 'zone_id'],
+    'the function receives exactly the fields the web checkout sends');
+  assert.deepEqual(plain([sent.full_name, sent.contact_phone, sent.email, sent.street, sent.area, sent.city, sent.zone_id, sent.payment_phone, sent.provider, sent.fulfilment]),
+    ['Aisha Sesay', '+23276521208', 'customer-a@example.invalid', 'Landmark', 'Goderich', 'Freetown', 'zone-1', '+23276521208', 'orange', 'delivery']);
+  assert.deepEqual(plain(backend.calls.invokes[0].options.body.expected_cart),
+    [{ product_id: 'product-a', variant_id: 'actual-variant-a', quantity: 1, unit_price: 12000 }]);
+  assert.equal(/total|fee|payment_status|paid/i.test(JSON.stringify(backend.calls.invokes[0].options.body)), false,
+    'the customer estimate never travels as authority');
+  assert.equal(backend.calls.invokes[0].options.headers.Authorization, 'Bearer synthetic-token');
+  const text = textOf(view.tree);
+  assert.match(text, /Order LH-0123456789ABCDEF received/);
+  assert.match(text, /Payment status: awaiting confirmation/);
+  assert.match(text, /confirmation email is queued\. This build cannot prove that any email was delivered/);
+  assert.match(text, /An order can be placed before any payment is confirmed, and a queued email is not a delivered one/);
+  assert.doesNotMatch(text, /Payment successful|Email sent|payment confirmed|paid/i, 'a placement is neither a payment nor a delivered email');
+  assert.equal(view.store[requestIdFor], undefined, 'a confirmed order releases its request id');
+  assert.equal(refreshes, 1, 'the server emptied the Bag, so this screen reloads it instead of editing a copy');
+  assert.deepEqual(inputLabels(view.tree), [], 'the confirmed draft is replaced by what the order service returned');
+  assert.equal(button(view.tree, 'Place order'), undefined);
+  assert.deepEqual(duplicateKeys(view.tree), []);
+  view.host.unmount();
+});
+
+test('a tap while an order is in flight never becomes a second order', async () => {
+  const gate = deferred();
+  const backend = fakeBackend({ responses: [gate.promise] });
+  const view = mountScreen({ auth: readyAuth, bag: readyBag(oneItem), catalogue: readyCatalogue, backend, profileLoad: async () => profile.mapProfile(row) });
+  view.render();
+  await view.settle();
+  await readyToPlace(view);
+  placeButton(view.tree).props.onPress();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  view.render();
+  assert.equal(placeButton(view.tree).props.disabled, true, 'the button cannot be pressed again while the order is being placed');
+  assert.match(view.store[requestIdFor], /^[0-9a-f-]{36}$/, 'the request id is reserved before the call is answered');
+  placeButton(view.tree).props.onPress();
+  view.render();
+  assert.equal(backend.calls.invokes.length, 1, 'an eager double tap sends one request');
+  gate.resolve(queued);
+  await view.settle();
+  assert.equal(backend.calls.invokes.length, 1);
+  assert.match(textOf(view.tree), /Order LH-0123456789ABCDEF received/);
+  view.host.unmount();
+});
+
+test('a definite refusal keeps the draft, clears the reserved id and says what actually happened', async () => {
+  const backend = fakeBackend({ responses: [refusal(409, 'CART_CHANGED')] });
+  const view = mountScreen({ auth: readyAuth, bag: readyBag(oneItem), catalogue: readyCatalogue, backend, profileLoad: async () => profile.mapProfile(row) });
+  view.render();
+  await view.settle();
+  await readyToPlace(view);
+  placeButton(view.tree).props.onPress();
+  await view.settle();
+  const alert = statusAlert(view.tree);
+  assert.equal(alert.props.accessibilityLiveRegion, 'polite', 'the refusal is announced without stealing focus');
+  assert.equal(textOf(alert), 'Your Bag changed while you were checking out. Review the new Bag before ordering.');
+  assert.equal(view.store[requestIdFor], undefined, 'no order exists, so the id is not held hostage');
+  assert.equal(button(view.tree, 'Retry the same request'), undefined, 'a refusal the shop already answered is never silently retried');
+  assert.deepEqual(inputLabels(view.tree), [...deliveryEditors, ...paymentEditor], 'the draft stays where the customer left it');
+  assert.match(textOf(view.tree), /Payment awaits confirmation\. Placing an order saves your order/, 'the refusal does not claim a payment either way');
+  assert.doesNotMatch(textOf(view.tree), /Payment successful|received\./i, 'a refused request is never shown as an order');
+  view.host.unmount();
+});
+
+test('an unanswered order keeps its request id and retries the byte-identical request', async () => {
+  const backend = fakeBackend({ responses: [{ data: null, error: new Error('fetch failed') }, queued] });
+  const view = mountScreen({ auth: readyAuth, bag: readyBag(oneItem), catalogue: readyCatalogue, backend, profileLoad: async () => profile.mapProfile(row) });
+  view.render();
+  await view.settle();
+  await readyToPlace(view);
+  placeButton(view.tree).props.onPress();
+  await view.settle();
+  assert.equal(textOf(statusAlert(view.tree)), 'Your order could not be confirmed. Retry the same request, or check your orders before trying again.');
+  const reserved = view.store[requestIdFor];
+  assert.match(reserved, /^[0-9a-f-]{36}$/, 'a lost response keeps its id so a retry is not a second order');
+  const original = plain(backend.calls.invokes[0].options.body);
+  button(view.tree, 'Retry the same request').props.onPress();
+  await view.settle();
+  assert.equal(backend.calls.invokes.length, 2);
+  assert.deepEqual(plain(backend.calls.invokes[1].options.body), original, 'the retry re-sends the same request id, checkout and reviewed cart');
+  assert.match(textOf(view.tree), /Order LH-0123456789ABCDEF received/);
+  assert.equal(view.store[requestIdFor], undefined);
+  view.host.unmount();
+});
+
+test('an interrupted checkout is recovered from the order table before a new order is offered', async () => {
+  const stored = '00000000-0000-4000-8000-000000000009';
+  const backend = fakeBackend({ read: { data: { id: placedRow.id }, error: null } });
+  const view = mountScreen({ auth: readyAuth, bag: readyBag(oneItem), catalogue: readyCatalogue, backend,
+    store: memoryStore({ [requestIdFor]: stored }), profileLoad: async () => profile.mapProfile(row) });
+  view.render();
+  await view.settle();
+  assert.deepEqual(backend.calls.reads, [{ column: 'checkout_request_id', value: stored }], 'the recovery read is keyed by the request id alone');
+  assert.equal(backend.calls.invokes.length, 0, 'a checkout that already placed an order is never placed again');
+  const text = textOf(view.tree);
+  assert.match(text, /Your order was already placed/);
+  assert.match(text, /Payment status: awaiting confirmation/);
+  assert.match(text, /We found the order your previous checkout started/);
+  assert.doesNotMatch(text, /confirmation email is queued|accepted for sending|needs a manual review/, 'a recovered order has no email evidence, so none is claimed');
+  assert.equal(view.store[requestIdFor], undefined);
+  view.host.unmount();
+});
+
+test('a reserved id with no order behind it stays reserved, and a checkout that cannot be checked says so', async () => {
+  const stored = '00000000-0000-4000-8000-000000000008';
+  const missing = fakeBackend();
+  const quiet = mountScreen({ auth: readyAuth, bag: readyBag(oneItem), catalogue: readyCatalogue, backend: missing,
+    store: memoryStore({ [requestIdFor]: stored }) });
+  quiet.render();
+  await quiet.settle();
+  assert.equal(textOf(statusAlert(quiet.tree)), 'No unfinished order was found for your previous checkout.',
+    'a checkout that the database says never placed is stated, not treated as a failure');
+  assert.equal(button(quiet.tree, 'Retry the same request'), undefined, 'there is nothing in flight to retry');
+  assert.equal(quiet.store[requestIdFor], stored, 'nothing proved an order exists, so the id is kept for the retry');
+  quiet.host.unmount();
+
+  const broken = fakeBackend({ read: { data: null, error: { message: 'unreachable' } } });
+  const doubtful = mountScreen({ auth: readyAuth, bag: readyBag(oneItem), catalogue: readyCatalogue, backend: broken,
+    store: memoryStore({ [requestIdFor]: stored }) });
+  doubtful.render();
+  await doubtful.settle();
+  assert.equal(textOf(statusAlert(doubtful.tree)),
+    'Your previous checkout could not be checked. Your order may already be in your orders, so a retry reuses the same request.');
+  assert.equal(broken.calls.invokes.length, 0, 'an unreadable checkout is never re-placed on the customer behalf');
+  assert.equal(doubtful.store[requestIdFor], stored);
+  doubtful.host.unmount();
 });

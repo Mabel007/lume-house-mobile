@@ -7,7 +7,18 @@ export type OrderStatus = typeof orderStatuses[number];
 export type PaymentStatus = typeof paymentStatuses[number];
 
 export type PlacedOrder = { id: string; reference: string; total: number; currency: string; status: OrderStatus; paymentStatus: PaymentStatus };
+export type Placement = { order: PlacedOrder; emailStatus: EmailStatus };
 export type ExpectedLine = { product_id: string; variant_id: string; quantity: number; unit_price: number };
+
+// The only three answers the place-order function can give about a confirmation email.
+// 'queued' is the fail-closed answer for "not attempted", "not configured" and "bookkeeping failed",
+// so it can never be presented as delivered.
+export const emailStates = ['queued', 'sent', 'review_required'] as const;
+export type EmailStatus = typeof emailStates[number];
+
+export function emailStatus(value: unknown): EmailStatus {
+  return typeof value === 'string' && (emailStates as readonly string[]).includes(value) ? value as EmailStatus : 'queued';
+}
 
 // place_variant_order compares p_expected_cart with its own locked quote, key for key.
 // Anything missing, unpriced or invented here must fail before a request is built.

@@ -67,7 +67,7 @@ export function CheckoutPayment({ draft, errors, lines, fee, busy, onChange, onT
       {row('fee', draft.fulfilment === 'pickup' ? 'Pickup' : 'Delivery', labels.fee)}
       {row('total', 'Estimated total', labels.total, true)}
     </View>
-    <Text style={styles.note}>Order totals are confirmed securely when the order is placed. This build cannot place an order yet.</Text>
+    <Text style={styles.note}>Totals are confirmed by the shop when the order is placed. This estimate is for your review only.</Text>
   </View>;
 }
 

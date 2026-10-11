@@ -1,19 +1,35 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Link, router, useFocusEffect } from 'expo-router';
 import { Alert, BackHandler, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { randomUUID } from 'expo-crypto';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { revealField as revealIn, type FieldReveal, type RevealerNode, type ScrollFrame } from '../../lib/scrollReveal';
 import { useAuth } from '../auth/AuthContext';
 import { useBag } from '../cart/BagContext';
-import { cartLine } from '../cart/cart';
+import { cartLine, type CartItem } from '../cart/cart';
 import { useProducts } from '../products/ProductContext';
 import { variantLabel } from '../products/variants';
+import type { Product } from '../products/products';
 import { emptyProfile, type Profile } from '../profile/profile';
 import { loadProfile } from '../profile/profileRepository';
 import { getSupabaseClient } from '../../lib/supabase/client';
+import { CheckoutController, type KeyStorage } from './CheckoutController';
 import { CheckoutDetails } from './CheckoutDetails';
 import { CheckoutPayment } from './CheckoutPayment';
 import { checkoutErrors, deliveryFee, deliveryNotice, emptyCheckout, prefillDefaults, shownErrors, type CheckoutDraft, type CheckoutField, type CheckoutLine, type TouchedFields } from './checkout';
+
+const keyStorage: KeyStorage = {
+  getItem: key => AsyncStorage.getItem(key),
+  setItem: (key, value) => AsyncStorage.setItem(key, value).then(() => undefined),
+  removeItem: key => AsyncStorage.removeItem(key).then(() => undefined),
+};
+
+const emailCopy: Record<string, string> = {
+  queued: 'Your confirmation email is queued. This build cannot prove that any email was delivered.',
+  sent: 'Your confirmation email has been accepted for sending by the provider, which is not proof that it arrived.',
+  review_required: 'Your confirmation email needs a manual review by the shop. Your order is saved.',
+};
 
 export default function CheckoutScreen() {
   const { state: auth, busy: authBusy } = useAuth();
@@ -75,26 +91,31 @@ export default function CheckoutScreen() {
             {unavailable.length ? <Text style={styles.text}>Some selections are no longer available. Update your Bag before continuing.</Text> : null}
             <Pressable accessibilityRole="button" accessibilityLabel="Refresh Bag" accessibilityState={{ disabled: busy, busy }} disabled={busy}
               onPress={() => { refreshCatalogue(); void refresh(); }} style={styles.secondary}><Text style={styles.secondaryText}>Refresh Bag</Text></Pressable>
-            {user ? <CheckoutFlow key={user.id} userId={user.id} email={user.email ?? ''} busy={authBusy} pieces={pieces} reveal={reveal} /> : null}
+            {user ? <CheckoutFlow key={user.id} userId={user.id} email={user.email ?? ''} busy={busy} pieces={pieces}
+              items={items} products={priced} reveal={reveal} refreshBag={() => { void refresh(); }} /> : null}
           </> : null}
-          <View accessible accessibilityRole="alert" accessibilityLiveRegion="polite"
-            accessibilityLabel="Order placement is not available in this build yet. Your Bag and saved details are unchanged.">
-            <Text style={styles.notice}>Order placement is not available in this build yet. Your Bag and saved details are unchanged.</Text>
-          </View>
+          <Text accessibilityRole="alert" style={styles.notice}>Payment awaits confirmation. Placing an order saves your order and requests a confirmation email. Selecting mobile money does not charge or verify your account.</Text>
         </>}
       </View>
     </ScrollView>
   </KeyboardAvoidingView></SafeAreaView>;
 }
 
-// One draft per signed-in customer: a new identity gets a new component, so no detail can carry over.
-function CheckoutFlow({ userId, email, busy, pieces, reveal }: { userId: string; email: string; busy: boolean; pieces: readonly CheckoutLine[]; reveal: FieldReveal }) {
+// One draft and one submission per signed-in customer: a new identity gets a new component, so no detail
+// or reserved request id can carry over between accounts.
+function CheckoutFlow({ userId, email, busy, pieces, items, products, reveal, refreshBag }: {
+  userId: string; email: string; busy: boolean; pieces: readonly CheckoutLine[]; items: readonly CartItem[];
+  products: readonly Product[]; reveal: FieldReveal; refreshBag: () => void;
+}) {
   const [draft, setDraft] = useState<CheckoutDraft>(emptyCheckout);
   const [saved, setSaved] = useState<Profile | null>(null);
   const [touched, setTouched] = useState<TouchedFields>({});
   const dirty = useRef(false);
   const keyboardOpen = useRef(false);
   const backPress = useRef<() => boolean>(() => false);
+  const keepBag = useRef(refreshBag);
+  const [controller] = useState(() => new CheckoutController(getSupabaseClient(), userId, keyStorage, randomUUID));
+  const submission = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   useEffect(() => {
     let active = true;
     // A missing or unreadable profile simply leaves the draft empty; checkout never blocks on saved defaults.
@@ -103,6 +124,17 @@ function CheckoutFlow({ userId, email, busy, pieces, reveal }: { userId: string;
     return () => { active = false; };
   }, [userId]);
   useEffect(() => { if (saved && !dirty.current) setDraft(current => prefillDefaults(current, saved, email)); }, [saved, email]);
+  useEffect(() => {
+    controller.activate();
+    // An interrupted placement is checked before the customer is offered a new one.
+    void controller.recover();
+    return () => controller.deactivate();
+  }, [controller]);
+  useEffect(() => { keepBag.current = refreshBag; });
+  useEffect(() => {
+    // The Bag is server state: the order service emptied it, so this screen reloads instead of editing a local copy.
+    if (submission.status === 'placed') { dirty.current = false; keepBag.current(); }
+  }, [submission.status]);
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => backPress.current());
     const shown = Keyboard.addListener('keyboardDidShow', () => { keyboardOpen.current = true; });
@@ -125,10 +157,47 @@ function CheckoutFlow({ userId, email, busy, pieces, reveal }: { userId: string;
   const change = (changes: Partial<CheckoutDraft>) => { dirty.current = true; setDraft(current => ({ ...current, ...changes })); };
   // A field only reports once the customer has entered it and moved on, so an untouched form never reads as a wall of errors.
   const touch = (field: CheckoutField) => setTouched(current => current[field] ? current : { ...current, [field]: true });
+  const fee = deliveryFee(draft);
+  if (submission.status === 'placed') return <Placed submission={submission} />;
+  const blocked = busy || !pieces.length || pieces.some(piece => !piece.available) || fee === null ||
+    submission.status === 'submitting' || submission.status === 'checking';
+  const place = () => {
+    const problems = checkoutErrors(draft);
+    // Pressing Place order is an explicit request to review everything, so every remaining problem becomes visible.
+    if (Object.keys(problems).length) setTouched(current => { const next = { ...current }; for (const field of Object.keys(problems) as CheckoutField[]) next[field] = true; return next; });
+    void controller.submit(draft, items, products);
+  };
   return <>
     <CheckoutDetails draft={draft} errors={errors} notice={deliveryNotice(draft)} busy={busy} revealField={reveal} onChange={change} onTouch={touch} />
-    <CheckoutPayment draft={draft} errors={errors} lines={pieces} fee={deliveryFee(draft)} busy={busy} revealField={reveal} onChange={change} onTouch={touch} />
+    <CheckoutPayment draft={draft} errors={errors} lines={pieces} fee={fee} busy={busy} revealField={reveal} onChange={change} onTouch={touch} />
+    <View style={styles.submit}>
+      {submission.message ? <Text accessible accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.notice}>{submission.message}</Text> : null}
+      <Pressable accessibilityRole="button" accessibilityLabel="Place order"
+        accessibilityHint={blocked ? 'Complete the highlighted details first.' : 'Saves your order with the shop. No payment is taken.'}
+        accessibilityState={{ disabled: blocked, busy: submission.status === 'submitting' }}
+        disabled={blocked} onPress={place} style={({ pressed }) => [styles.place, pressed && styles.pressed]}>
+        <Text style={styles.placeText}>{submission.status === 'submitting' ? 'Placing your order…' : 'Place order'}</Text>
+      </Pressable>
+      {submission.canRetry ? <Pressable accessibilityRole="button" accessibilityLabel="Retry the same request"
+        accessibilityHint="Repeats your last order request exactly, so an order is never placed twice."
+        accessibilityState={{ disabled: busy }} disabled={busy} onPress={() => { void controller.retry(); }} style={styles.secondary}>
+        <Text style={styles.secondaryText}>Retry the same request</Text>
+      </Pressable> : null}
+      <Text style={styles.note}>Placing an order saves it with the shop. It does not confirm payment, and nothing is charged by this app.</Text>
+    </View>
   </>;
+}
+
+// Only what the order service actually returned, with the payment and email claims kept exactly as narrow as the evidence.
+function Placed({ submission }: { submission: { reference: string | null; emailStatus: string | null } }) {
+  return <View style={styles.submit}>
+    <Text accessibilityRole="header" style={styles.placedTitle}>{submission.reference ? `Order ${submission.reference} received.` : 'Your order was already placed.'}</Text>
+    <Text style={styles.text}>Payment status: awaiting confirmation. Your selected mobile-money method has not been charged or verified by this app.</Text>
+    <Text style={styles.text}>{submission.emailStatus === null
+      ? 'We found the order your previous checkout started. Your Bag has been refreshed.'
+      : emailCopy[submission.emailStatus]}</Text>
+    <Text style={styles.note}>An order can be placed before any payment is confirmed, and a queued email is not a delivered one.</Text>
+  </View>;
 }
 
 const styles = StyleSheet.create({
@@ -140,6 +209,12 @@ const styles = StyleSheet.create({
   text: { fontSize: 16, lineHeight: 25, color: '#423F38' },
   name: { fontSize: 19, fontWeight: '600', color: '#292820' },
   notice: { fontSize: 16, lineHeight: 25, color: '#535B40', fontWeight: '600' },
+  submit: { gap: 12, padding: 20, borderRadius: 12, backgroundColor: '#FFFFFF' },
+  place: { minHeight: 56, justifyContent: 'center', alignItems: 'center', borderRadius: 8, backgroundColor: '#535B40' },
+  placeText: { color: '#FFFFFF', fontSize: 17, fontWeight: '600' },
+  placedTitle: { fontSize: 23, color: '#292820' },
+  note: { fontSize: 15, lineHeight: 23, color: '#665F52' },
+  pressed: { opacity: 0.7 },
   link: { minHeight: 48, justifyContent: 'center' },
   secondary: { minHeight: 48, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 8, backgroundColor: '#EBE5D9', alignItems: 'center' },
   secondaryText: { color: '#423F38', fontSize: 15, fontWeight: '600' },
