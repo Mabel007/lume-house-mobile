@@ -2,7 +2,7 @@
   "expo": {
     "name": "Lumé House",
     "slug": "lume-house-mobile",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "lumehousemobile",
@@ -12,6 +12,7 @@
     },
     "android": {
       "package": "com.najbuilds.lumehouse",
+      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#F6F2EB",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
