@@ -21,10 +21,14 @@ export function ProductCard({ product, details = false }: { product: Product; de
   const price = cataloguePrice({ ...product, variants });
   const available = variantAvailable(variant);
   const limitReached = bag.state.items.some(item => item.variantId === variant?.id && item.quantity >= MAX_QUANTITY);
-  const busy = authBusy || auth.status === 'restoring' || bag.signedIn && bag.state.status !== 'ready';
+  // Only genuine in-flight work reads as busy. A definite failure or an unconfirmed one is finished, and
+  // reporting it as progress both lies to the screen reader and hides the recovery the customer needs.
+  const working = bag.signedIn && (bag.state.status === 'loading' || bag.state.status === 'saving');
+  const recovering = bag.signedIn && (bag.state.status === 'error' || bag.state.status === 'uncertain');
+  const busy = authBusy || auth.status === 'restoring' || working;
   async function add() {
     setConfirmation(null);
-    if (!available || !variant || busy || limitReached) return;
+    if (!available || !variant || busy || recovering || limitReached) return;
     if (!bag.signedIn) { router.navigate('/account'); return; }
     if (await bag.dispatch({ type: 'add', variantId: variant.id })) setConfirmation('Added to your Bag.');
   }
@@ -61,10 +65,17 @@ export function ProductCard({ product, details = false }: { product: Product; de
       })}
     </View> : null}
     <View style={styles.actions}>
+      {details && recovering && bag.state.message ? <View style={styles.recovery}>
+        <Text accessible accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.optionText}>{bag.state.message}</Text>
+        <View style={styles.recoveryActions}>
+          <ActionButton label="Refresh Bag" secondary busy={busy} disabled={busy} onPress={() => { void bag.refresh(); }} />
+          {bag.state.canRetry ? <ActionButton label="Retry saved change" secondary busy={busy} disabled={busy} onPress={() => { void bag.retry(); }} /> : null}
+        </View>
+      </View> : null}
       <ActionButton label={limitReached ? 'Quantity limit reached' : !variant ? optionsRequired ? 'Choose a selection' : 'Unavailable' :
         !available ? 'Unavailable' : bag.signedIn ? 'Add to Bag' : 'Sign in to add'}
         accessibilityLabel={`Add ${product.name}${variant ? `, ${variantLabel(variant) || 'standard selection'}` : ''} to Bag`}
-        busy={busy} disabled={!available || busy || limitReached} onPress={() => { void add(); }} />
+        busy={busy} disabled={!available || busy || recovering || limitReached} onPress={() => { void add(); }} />
       {product.variants === undefined ? <Text style={styles.category}>Selections are unavailable. Refresh the catalogue to try again.</Text> : null}
       {confirmation ? <Text accessibilityLiveRegion="polite" style={styles.optionText}>{confirmation}</Text> : null}
     </View>
@@ -80,4 +91,6 @@ const styles = StyleSheet.create({
   options: { gap: 8, marginTop: 8 }, option: { minHeight: 48, borderWidth: 1, borderColor: '#A59C8B',
     borderRadius: 8, padding: 10, gap: 4 }, selected: { borderColor: '#535B40', backgroundColor: '#E7E8DB', borderWidth: 2 },
   optionText: { color: '#423F38', fontSize: 13, lineHeight: 19 }, dim: { opacity: 0.55 }, actions: { marginTop: 12, gap: 8 },
+  recovery: { gap: 8, padding: 12, borderRadius: 8, backgroundColor: '#EFEBE1' },
+  recoveryActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
 });
