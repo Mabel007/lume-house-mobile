@@ -308,14 +308,16 @@ test('a confirmation opened from checkout shows only what the shop recorded', as
     assert.ok(text.includes(part), `${part} is shown`);
   }
   assert.match(text, /Selected method: Orange Money · number ending 2120/, 'only the last digits the shop kept are repeated');
-  assert.match(text, /The confirmation email is queued\. Your order is saved while it waits, and nothing here proves it was delivered/);
+  assert.match(text, /The provider accepted the confirmation email for sending\. That is acceptance, not proof that it arrived/);
+  assert.doesNotMatch(text, /The confirmation email is queued/, 'the state the service reported wins over anything the hand-off claimed');
   assert.match(text, /Your order is saved even if the confirmation email is delayed/);
   assert.doesNotMatch(text, /Payment successful|payment confirmed|Email sent|has been delivered|paid/i,
     'placement is shown as placement: no money taken, no email delivered');
   assert.ok(link(view.tree, '/'), 'the way back to the catalogue is offered');
   assert.match(text, /Continue shopping/);
   assert.ok(link(view.tree, '/orders'), 'the rest of this account\u2019s orders is one step away');
-  assert.equal(view.calls.checks.length, 0, 'the email state is carried in, never re-asked on arrival');
+  assert.deepEqual(plain(view.calls.checks), [{ userId: 'customer-a', orderId: identifier, active: 'function' }],
+    'the email state is asked of the order service under this customer, never read off the route');
   view.host.unmount();
 });
 
@@ -458,4 +460,28 @@ test('an order that still awaits payment says so every time it is opened, not on
   assert.doesNotMatch(textOf(settled.tree), /Payment is awaiting confirmation/, 'a paid record is not shown as still waiting');
   assert.match(textOf(settled.tree), /Payment: Paid/);
   settled.host.unmount();
+});
+
+test('a typed or deep-linked email state is inert: only the order service may speak about the email', async () => {
+  for (const claim of ['sent', 'delivered', 'queued', ['queued', 'sent'], '']) {
+    const view = mountDetails({ params: { orderId: identifier, email: claim } });
+    view.render();
+    await view.settle();
+    const text = textOf(view.tree);
+    assert.match(text, /The confirmation email status for this order has not been checked on this device/,
+      `a route that claims ${JSON.stringify(claim)} still says nothing until the service answers`);
+    assert.doesNotMatch(text, /accepted for sending|is queued|needs a manual review|delivered/i);
+    assert.equal(view.calls.checks.length, 0, 'an order opened from history is not re-asked just because the route asserted something');
+    view.host.unmount();
+  }
+
+  // Even on the fresh hand-off the claim is discarded: the answer comes from the owner-scoped check instead.
+  const handed = mountDetails({ params: { orderId: identifier, received: '1', email: 'sent' }, emailCheck: async () => 'review_required' });
+  handed.render();
+  await handed.settle();
+  assert.deepEqual(plain(handed.calls.checks), [{ userId: 'customer-a', orderId: identifier, active: 'function' }],
+    'the confirmation screen asks the same owner-scoped control the button uses');
+  assert.match(textOf(handed.tree), /The confirmation email needs a manual review by the shop\. Your order is saved/);
+  assert.doesNotMatch(textOf(handed.tree), /accepted for sending/);
+  handed.host.unmount();
 });

@@ -557,8 +557,8 @@ test('placing an order calls the shared order service with no client money and s
   const text = textOf(view.tree);
   assert.match(text, /Your order is saved\. Opening your order confirmation/);
   assert.doesNotMatch(text, /Payment successful|Email sent|payment confirmed|paid/i, 'a placement is neither a payment nor a delivered email');
-  assert.deepEqual(plain(view.routes), [{ pathname: '/orders/[orderId]', params: { orderId: placedRow.id, received: '1', email: 'queued' } }],
-    'the confirmation screen is handed only the order identity plus the email state this response returned');
+  assert.deepEqual(plain(view.routes), [{ pathname: '/orders/[orderId]', params: { orderId: placedRow.id, received: '1' } }],
+    'the hand-off carries the order identity only: the email state is asked of the order service, never carried in');
   assert.equal(view.store[requestIdFor], undefined, 'a confirmed order releases its request id');
   assert.equal(refreshes, 1, 'the server emptied the Bag, so this screen reloads it instead of editing a copy');
   assert.deepEqual(inputLabels(view.tree), [], 'the confirmed draft is replaced by the hand-off line');

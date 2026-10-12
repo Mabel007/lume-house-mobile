@@ -6,17 +6,13 @@ import { ActionButton } from '../../components/ActionButton';
 import { useAuth } from '../auth/AuthContext';
 import { getSupabaseClient } from '../../lib/supabase/client';
 import { emailCopy, moneyAt, orderDateTime, orderLabel, type OrderDetail } from './orders';
-import { emailStates, type EmailStatus } from '../checkout/order';
+import type { EmailStatus } from '../checkout/order';
 import { paymentProviders } from '../checkout/checkout';
 import { checkConfirmation, loadOrder } from './orderRepository';
 import { CancellationPanel } from './CancellationPanel';
 
 const identifier = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const money = (value: number) => moneyAt(value);
-const emailOf = (value: string | string[] | undefined): EmailStatus | null => {
-  const text = Array.isArray(value) ? value[0] : value;
-  return typeof text === 'string' && (emailStates as readonly string[]).includes(text) ? text as EmailStatus : null;
-};
 const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
 // A repository failure is always given as customer-facing text, and a read that returns nothing at all is
 // reported as the generic retry line rather than as an empty success.
@@ -28,7 +24,7 @@ type EmailRead = { key: string; status: EmailStatus | null; message: string | nu
 
 export default function OrderDetailsScreen() {
   const { state: auth } = useAuth();
-  const { orderId, received, email } = useLocalSearchParams<{ orderId?: string | string[]; received?: string | string[]; email?: string | string[] }>();
+  const { orderId, received } = useLocalSearchParams<{ orderId?: string | string[]; received?: string | string[] }>();
   const id = first(orderId);
   const trusted = id && identifier.test(id) ? id : null;
   const justPlaced = first(received) === '1';
@@ -39,11 +35,11 @@ export default function OrderDetailsScreen() {
   // session change or a retry shows loading instead of leaving the previous answer on screen.
   const readKey = userId && trusted ? `${userId}:${trusted}:${revision}` : '';
   const read = state.key === readKey ? state : { status: 'loading' as const, order: null, message: null };
-  const [emailRevision, setEmailRevision] = useState(0);
+  const [emailRevision, setEmailRevision] = useState(justPlaced ? 1 : 0);
   const emailKey = userId && trusted ? `${userId}:${trusted}:${emailRevision}` : '';
-  // The email state is only ever what the order service said about this order on this device: it starts from
-  // the placement response and changes only when the customer asks, so a restart cannot invent a delivery.
-  const [emailState, setEmailState] = useState<EmailRead>({ key: '', status: emailOf(email), message: null });
+  // Only the order service speaks about the email, and only for this customer's own order: a navigation
+  // parameter could be typed, shared or deep-linked, so nothing is asserted until the service has answered.
+  const [emailState, setEmailState] = useState<EmailRead>({ key: '', status: null, message: null });
   const emailBusy = emailRevision > 0 && emailState.key !== emailKey;
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -125,7 +121,7 @@ export default function OrderDetailsScreen() {
     </Section>
     <CancellationPanel userId={userId} order={order} />
     <Section title="Confirmation email">
-      <Text accessible accessibilityLiveRegion="polite" style={styles.text}>{emailState.status ? emailCopy[emailState.status] : 'The confirmation email status for this order has not been checked on this device.'}</Text>
+      <Text accessible accessibilityLiveRegion="polite" style={styles.text}>{emailState.status ? emailCopy[emailState.status] : emailBusy ? 'Checking the confirmation email status with the shop…' : 'The confirmation email status for this order has not been checked on this device.'}</Text>
       {!emailBusy && emailState.message ? <Text accessible accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.text}>{emailState.message}</Text> : null}
       <Text style={styles.note}>Your order is saved even if the confirmation email is delayed.</Text>
       <ActionButton label="Check the confirmation email" secondary busy={emailBusy} disabled={emailBusy}

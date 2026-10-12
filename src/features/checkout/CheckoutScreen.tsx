@@ -132,12 +132,12 @@ function CheckoutFlow({ userId, email, busy, pieces, items, products, reveal, re
   }, [submission.status]);
   useEffect(() => {
     // The confirmation screen reads the committed order back from the database, so this hand-off carries only
-    // its identity plus the email state the placement response actually returned.
+    // its identity. The email state is not carried here: the order service is asked about it, because a route
+    // parameter can be typed or deep-linked and would otherwise let a device assert a send that never happened.
     if (submission.status !== 'placed' || !submission.orderId) return;
     if (confirmed.current) return;
     confirmed.current = true;
-    router.replace({ pathname: '/orders/[orderId]', params: { orderId: submission.orderId, received: '1',
-      ...(submission.emailStatus ? { email: submission.emailStatus } : {}) } });
+    router.replace({ pathname: '/orders/[orderId]', params: { orderId: submission.orderId, received: '1' } });
   }, [submission]);
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => backPress.current());
