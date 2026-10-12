@@ -9,6 +9,7 @@ import { emailCopy, moneyAt, orderDateTime, orderLabel, type OrderDetail } from 
 import type { EmailStatus } from '../checkout/order';
 import { paymentProviders } from '../checkout/checkout';
 import { checkConfirmation, loadOrder } from './orderRepository';
+import { placedEmail } from './placedConfirmation';
 import { CancellationPanel } from './CancellationPanel';
 
 const identifier = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -35,11 +36,12 @@ export default function OrderDetailsScreen() {
   // session change or a retry shows loading instead of leaving the previous answer on screen.
   const readKey = userId && trusted ? `${userId}:${trusted}:${revision}` : '';
   const read = state.key === readKey ? state : { status: 'loading' as const, order: null, message: null };
-  const [emailRevision, setEmailRevision] = useState(justPlaced ? 1 : 0);
+  const [emailRevision, setEmailRevision] = useState(0);
   const emailKey = userId && trusted ? `${userId}:${trusted}:${emailRevision}` : '';
-  // Only the order service speaks about the email, and only for this customer's own order: a navigation
-  // parameter could be typed, shared or deep-linked, so nothing is asserted until the service has answered.
-  const [emailState, setEmailState] = useState<EmailRead>({ key: '', status: null, message: null });
+  // The email line is either what this device heard from the order service when it placed this order, or what the
+  // customer explicitly asked it to check. A route parameter is never trusted, and arriving here never re-asks,
+  // because that call claims the job and attempts a send.
+  const [emailState, setEmailState] = useState<EmailRead>({ key: '', status: placedEmail(trusted), message: null });
   const emailBusy = emailRevision > 0 && emailState.key !== emailKey;
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);

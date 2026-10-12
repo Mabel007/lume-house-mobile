@@ -217,7 +217,7 @@ function mountDetails({ params = {}, auth = { status: 'signed-in', user: { id: '
   orderLoad = async () => orders.parseOrderDetail(detailRow), emailCheck = async () => 'sent' } = {}) {
   const host = hooks();
   const view = {
-    host, tree: null, authState: auth, calls: { loads: [], checks: [], routes: [] },
+    host, tree: null, authState: auth, placedEmailValue: null, calls: { loads: [], checks: [], routes: [] },
     // A session change is the one input this screen cannot control, so tests can move the customer under it.
     auth: state => { view.authState = state; },
     render: () => { host.begin(); view.tree = expand(Screen()); return view.tree; },
@@ -244,6 +244,8 @@ function mountDetails({ params = {}, auth = { status: 'signed-in', user: { id: '
       loadOrder: async (client, userId, orderId, active) => { view.calls.loads.push({ userId, orderId, active: typeof active }); return orderLoad(userId, orderId); },
       checkConfirmation: async (client, userId, orderId, active) => { view.calls.checks.push({ userId, orderId, active: typeof active }); return emailCheck(userId, orderId); },
     },
+    // The in-memory hand-off is what the checkout screen remembers, so tests can say what this device heard.
+    './placedConfirmation': { placedEmail: () => view.placedEmailValue },
   }).default;
   return view;
 }
@@ -283,7 +285,8 @@ test('an order reference that never arrived is stated, never guessed at', async 
 });
 
 test('a confirmation opened from checkout shows only what the shop recorded', async () => {
-  const view = mountDetails({ params: { orderId: identifier, received: '1', email: 'queued' } });
+  const view = mountDetails({ params: { orderId: identifier, received: '1', email: 'sent' } });
+  view.placedEmailValue = 'queued';
   view.render();
   assert.equal(textOf(header(view.tree)), 'Order received', 'the hand-off keeps its own heading while the order is read back');
   assert.equal(find(view.tree, element => element.type === 'ActivityIndicator').props.accessibilityLabel, 'Loading your order');
@@ -308,16 +311,16 @@ test('a confirmation opened from checkout shows only what the shop recorded', as
     assert.ok(text.includes(part), `${part} is shown`);
   }
   assert.match(text, /Selected method: Orange Money · number ending 2120/, 'only the last digits the shop kept are repeated');
-  assert.match(text, /The provider accepted the confirmation email for sending\. That is acceptance, not proof that it arrived/);
-  assert.doesNotMatch(text, /The confirmation email is queued/, 'the state the service reported wins over anything the hand-off claimed');
+  assert.match(text, /The confirmation email is queued\. Your order is saved while it waits, and nothing here proves it was delivered/);
+  assert.doesNotMatch(text, /accepted for sending/, 'the route claimed a send; only what this device heard from the service is shown');
   assert.match(text, /Your order is saved even if the confirmation email is delayed/);
   assert.doesNotMatch(text, /Payment successful|payment confirmed|Email sent|has been delivered|paid/i,
     'placement is shown as placement: no money taken, no email delivered');
   assert.ok(link(view.tree, '/'), 'the way back to the catalogue is offered');
   assert.match(text, /Continue shopping/);
   assert.ok(link(view.tree, '/orders'), 'the rest of this account\u2019s orders is one step away');
-  assert.deepEqual(plain(view.calls.checks), [{ userId: 'customer-a', orderId: identifier, active: 'function' }],
-    'the email state is asked of the order service under this customer, never read off the route');
+  assert.equal(view.calls.checks.length, 0,
+    'arriving at the confirmation never re-asks the email service, because that call claims the job and attempts a send');
   view.host.unmount();
 });
 
@@ -475,13 +478,31 @@ test('a typed or deep-linked email state is inert: only the order service may sp
     view.host.unmount();
   }
 
-  // Even on the fresh hand-off the claim is discarded: the answer comes from the owner-scoped check instead.
+  // Even on the fresh hand-off the route claim is discarded: the line shows what this device heard from the service.
   const handed = mountDetails({ params: { orderId: identifier, received: '1', email: 'sent' }, emailCheck: async () => 'review_required' });
+  handed.placedEmailValue = 'queued';
   handed.render();
   await handed.settle();
-  assert.deepEqual(plain(handed.calls.checks), [{ userId: 'customer-a', orderId: identifier, active: 'function' }],
-    'the confirmation screen asks the same owner-scoped control the button uses');
-  assert.match(textOf(handed.tree), /The confirmation email needs a manual review by the shop\. Your order is saved/);
+  assert.equal(handed.calls.checks.length, 0, 'the screen does not attempt a send merely to display a status it already heard');
+  assert.match(textOf(handed.tree), /The confirmation email is queued/);
   assert.doesNotMatch(textOf(handed.tree), /accepted for sending/);
+  emailButton(handed.tree).props.onPress();
+  await handed.settle();
+  assert.deepEqual(plain(handed.calls.checks), [{ userId: 'customer-a', orderId: identifier, active: 'function' }],
+    'only the customer asking reaches the email service, and it asks under this customer');
+  assert.match(textOf(handed.tree), /The confirmation email needs a manual review by the shop\. Your order is saved/);
   handed.host.unmount();
+});
+
+test('the remembered email answer belongs to the order that was just placed and to no other', () => {
+  const handed = load('src/features/orders/placedConfirmation.ts');
+  assert.equal(handed.placedEmail(identifier), null, 'nothing is remembered before a placement');
+  handed.rememberPlacedEmail(identifier, 'sent');
+  assert.equal(handed.placedEmail(identifier), 'sent', 'this device heard the service say it accepted the send');
+  assert.equal(handed.placedEmail('33333333-3333-4333-8333-333333333333'), null,
+    'an answer about one order is never shown on another');
+  assert.equal(handed.placedEmail(null), null, 'a route with no usable order id claims nothing');
+  handed.rememberPlacedEmail('33333333-3333-4333-8333-333333333333', 'queued');
+  assert.equal(handed.placedEmail(identifier), null, 'a newer placement replaces the older claim');
+  assert.equal(handed.placedEmail('33333333-3333-4333-8333-333333333333'), 'queued');
 });

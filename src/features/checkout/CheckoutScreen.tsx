@@ -13,6 +13,7 @@ import { variantLabel } from '../products/variants';
 import type { Product } from '../products/products';
 import { emptyProfile, type Profile } from '../profile/profile';
 import { loadProfile } from '../profile/profileRepository';
+import { rememberPlacedEmail } from '../orders/placedConfirmation';
 import { getSupabaseClient } from '../../lib/supabase/client';
 import { CheckoutController, type KeyStorage } from './CheckoutController';
 import { CheckoutDetails } from './CheckoutDetails';
@@ -132,11 +133,12 @@ function CheckoutFlow({ userId, email, busy, pieces, items, products, reveal, re
   }, [submission.status]);
   useEffect(() => {
     // The confirmation screen reads the committed order back from the database, so this hand-off carries only
-    // its identity. The email state is not carried here: the order service is asked about it, because a route
-    // parameter can be typed or deep-linked and would otherwise let a device assert a send that never happened.
+    // its identity. The email answer the placement returned is remembered in memory instead: a route parameter
+    // could be typed or deep-linked, and asking the email service again would attempt a send the customer did not.
     if (submission.status !== 'placed' || !submission.orderId) return;
     if (confirmed.current) return;
     confirmed.current = true;
+    if (submission.emailStatus) rememberPlacedEmail(submission.orderId, submission.emailStatus);
     router.replace({ pathname: '/orders/[orderId]', params: { orderId: submission.orderId, received: '1' } });
   }, [submission]);
   useEffect(() => {

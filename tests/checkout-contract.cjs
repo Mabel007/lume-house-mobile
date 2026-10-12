@@ -163,7 +163,7 @@ function mountScreen({ auth, bag, catalogue, profileLoad = async () => profile.m
   store = memoryStore(), newId = nextId }) {
   const host = hooks();
   const view = {
-    host, tree: null, backs: [], routes: [], calls: [], store: store.values, backend,
+    host, tree: null, backs: [], routes: [], calls: [], handoff: [], store: store.values, backend,
     render: () => { host.begin(); view.tree = expand(Screen({})); return view.tree; },
     // A state change from an effect only shows up on the next render, so settle re-renders after each microtask drain.
     settle: async () => {
@@ -185,6 +185,7 @@ function mountScreen({ auth, bag, catalogue, profileLoad = async () => profile.m
     '@react-native-async-storage/async-storage': store.api,
     '../../lib/supabase/client': { getSupabaseClient: () => backend.client },
     '../profile/profileRepository': { loadProfile: async (loaded, id, active) => { view.calls.push({ loaded, id, active: typeof active }); return profileLoad(id, active); } },
+    '../orders/placedConfirmation': { rememberPlacedEmail: (orderId, status) => { view.handoff.push({ orderId, status }); } },
     '../auth/AuthContext': { useAuth: auth },
     '../cart/BagContext': { useBag: bag },
     '../products/ProductContext': { useProducts: catalogue },
@@ -558,7 +559,9 @@ test('placing an order calls the shared order service with no client money and s
   assert.match(text, /Your order is saved\. Opening your order confirmation/);
   assert.doesNotMatch(text, /Payment successful|Email sent|payment confirmed|paid/i, 'a placement is neither a payment nor a delivered email');
   assert.deepEqual(plain(view.routes), [{ pathname: '/orders/[orderId]', params: { orderId: placedRow.id, received: '1' } }],
-    'the hand-off carries the order identity only: the email state is asked of the order service, never carried in');
+    'the hand-off carries the order identity only, so no typed or shared route can decide what the screen claims');
+  assert.deepEqual(plain(view.handoff), [{ orderId: placedRow.id, status: 'queued' }],
+    'the email answer the service returned travels in memory with its own order id, never in the URL');
   assert.equal(view.store[requestIdFor], undefined, 'a confirmed order releases its request id');
   assert.equal(refreshes, 1, 'the server emptied the Bag, so this screen reloads it instead of editing a copy');
   assert.deepEqual(inputLabels(view.tree), [], 'the confirmed draft is replaced by the hand-off line');
@@ -642,6 +645,7 @@ test('an interrupted checkout is recovered from the order table before a new ord
   assert.match(text, /Your order is saved\. Opening your order confirmation/);
   assert.deepEqual(plain(view.routes), [{ pathname: '/orders/[orderId]', params: { orderId: placedRow.id, received: '1' } }],
     'a recovered checkout is carried to the order the database says exists, and no email state is invented for it');
+  assert.deepEqual(plain(view.handoff), [], 'a recovery read heard no email answer, so it remembers nothing to display');
   assert.doesNotMatch(text, /queued|accepted for sending|manual review/i, 'a recovery read has no email evidence, so none is claimed');
   assert.equal(view.store[requestIdFor], undefined);
   view.host.unmount();
