@@ -28,6 +28,10 @@ export function ProductCard({ product, details = false }: { product: Product; de
   const selection = variant ? variantLabel(variant) : '';
   const addedUnits = bag.state.items.reduce((total, item) => total + item.quantity, 0);
   const limitReached = bag.state.items.some(item => item.variantId === variant?.id && item.quantity >= MAX_QUANTITY);
+  // A collection card is a decision about one piece, not a form: the choices belong to the product page, where the
+  // customer can see each selection's price and stock beside the piece itself.
+  const chooseOptions = !details && optionsRequired;
+  const soldOut = variants.length > 0 && !variants.some(choice => variantAvailable(choice));
   // Only genuine in-flight work reads as busy. A definite failure or an unconfirmed one is finished, and
   // reporting it as progress both lies to the screen reader and hides the recovery the customer needs.
   const working = bag.signedIn && (bag.state.status === 'loading' || bag.state.status === 'saving');
@@ -57,6 +61,8 @@ export function ProductCard({ product, details = false }: { product: Product; de
     <Text style={styles.category}>{product.category}</Text>
     <Text accessibilityRole={details ? 'header' : undefined} style={styles.name}>{product.name}</Text>
     <Text style={styles.price}>{!variant && price.from ? 'From ' : ''}{formatMoney(variant?.price ?? price.price)}</Text>
+    {/* In the collection a line is added only for bad news: an available piece needs no announcement of it. */}
+    {!details && soldOut ? <Text style={styles.soldOut}>Unavailable</Text> : null}
   </>;
   return <View style={styles.card}>
     {details ? <View>{information}</View> : <Pressable accessibilityRole="link" accessibilityLabel={`View details for ${product.name}`}
@@ -66,7 +72,7 @@ export function ProductCard({ product, details = false }: { product: Product; de
       <Text accessibilityLiveRegion="polite" style={styles.optionText}>{variant ? available ? 'Available' : 'Unavailable' :
         variants.filter(choice => !optionsRequired || !choice.isDefault).some(variantAvailable) ? 'Choose an available selection below.' : 'Unavailable'}</Text>
     </> : null}
-    {optionsRequired ? <View style={styles.options}>
+    {details && optionsRequired ? <View style={styles.options}>
       <Text style={styles.category}>Choose a selection</Text>
       {variants.filter(variant => !variant.isDefault).map(choice => {
         const inStock = variantAvailable(choice);
@@ -79,6 +85,8 @@ export function ProductCard({ product, details = false }: { product: Product; de
           style={[styles.option, selected && styles.selected, !inStock && styles.dim]}>
           <Text style={styles.optionText}>{label}</Text>
           <Text style={styles.optionText}>{formatMoney(choice.price)}{inStock ? '' : ' · Unavailable'}</Text>
+          {/* A colour alone is not a state: the chosen selection also says so in words. */}
+          {selected ? <Text style={styles.chosen}>Selected</Text> : null}
         </Pressable>;
       })}
     </View> : null}
@@ -90,10 +98,18 @@ export function ProductCard({ product, details = false }: { product: Product; de
           {bag.state.canRetry ? <ActionButton label="Retry saved change" secondary busy={busy} disabled={busy} onPress={() => { void bag.retry(); }} /> : null}
         </View>
       </View> : null}
-      <ActionButton label={pending ? 'Adding to your Bag…' : limitReached ? 'Quantity limit reached' : !variant ? optionsRequired ? 'Choose a selection' : 'Unavailable' :
-        !available ? 'Unavailable' : bag.signedIn ? 'Add to Bag' : 'Sign in to add'}
-        accessibilityLabel={`Add ${product.name}${variant ? `, ${variantLabel(variant) || 'standard selection'}` : ''} to Bag`}
-        busy={busy} disabled={!available || busy || recovering || limitReached} onPress={() => { void add(); }} />
+      {chooseOptions ? <ActionButton label="Choose options" accessibilityLabel={`Choose options for ${product.name}, which opens its product page`}
+        onPress={() => { router.navigate(productHref(product.id)); }} /> : <>
+        <ActionButton label={pending ? 'Adding to your Bag…' : limitReached ? 'Quantity limit reached' : !variant ? optionsRequired ? 'Choose a selection' : 'Unavailable' :
+          !available ? 'Unavailable' : bag.signedIn ? 'Add to Bag' : 'Sign in to add'}
+          accessibilityLabel={`Add ${product.name}${variant ? `, ${variantLabel(variant) || 'standard selection'}` : ''} to Bag`}
+          busy={busy} disabled={!available || busy || recovering || limitReached} onPress={() => { void add(); }} />
+        {/* A refused Add says why, in terms the customer can act on: stock is the shop's fact, not ours to guess. */}
+        {details && variant && !available ? <Text style={styles.reason}>This selection is not one the shop can take right now.
+          Refresh the product to check its stock, or choose another selection.</Text> : null}
+        {details && limitReached ? <Text style={styles.reason}>Your Bag already holds {MAX_QUANTITY} of this selection.
+          Remove one in your Bag to add another.</Text> : null}
+      </>}
       {product.variants === undefined ? <Text style={styles.category}>Selections are unavailable. Refresh the catalogue to try again.</Text> : null}
       {/* The record states a Bag count, so it is only honest while the cart is known: `ready`. */}
       {details && added && added === variant?.id && bag.state.status === 'ready' ? <View style={styles.added}>
@@ -119,6 +135,9 @@ const styles = StyleSheet.create({
   options: { gap: 8, marginTop: 8 }, option: { minHeight: 48, borderWidth: 1, borderColor: '#A59C8B',
     borderRadius: 8, padding: 10, gap: 4 }, selected: { borderColor: '#535B40', backgroundColor: '#E7E8DB', borderWidth: 2 },
   optionText: { color: '#423F38', fontSize: 13, lineHeight: 19 }, dim: { opacity: 0.55 }, actions: { marginTop: 12, gap: 8 },
+  soldOut: { color: '#9B2828', fontSize: 13, lineHeight: 19, fontWeight: '600' },
+  chosen: { color: '#535B40', fontSize: 13, lineHeight: 19, fontWeight: '600' },
+  reason: { color: '#665F52', fontSize: 14, lineHeight: 22 },
   recovery: { gap: 8, padding: 12, borderRadius: 8, backgroundColor: '#EFEBE1' },
   recoveryActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   added: { gap: 8, padding: 12, borderRadius: 8, backgroundColor: '#EFEBE1' },

@@ -185,7 +185,7 @@ test('image failure does not disable available variant selection/add or enable u
     { id: 'variant-a', productId: 'a', price: 100, options: { Size: 'Small' }, isDefault: false, inventoryPolicy: 'untracked' },
     { id: 'variant-b', productId: 'a', price: 200, options: { Size: 'Large' }, isDefault: false, inventoryPolicy: 'tracked', available: false },
   ] };
-  const render = () => { host.begin(); return ProductCard({ product }); };
+  const render = () => { host.begin(); return ProductCard({ product, details: true }); };
   assert.equal(find(render(), element => element.type === 'ActionButton').props.disabled, true);
   find(render(), element => element.type === 'Pressable' && element.props.accessibilityLabel.includes('Small')).props.onPress();
   const add = find(render(), element => element.type === 'ActionButton'); assert.equal(add.props.disabled, false);

@@ -156,13 +156,12 @@ test('a selection is still required before anything can be added, and an option-
 });
 
 test('a grid card keeps its answer in the banner, so the collection stays compact', async () => {
-  const view = card(mug);
-  view.select('Small');
+  const view = card(vase);
   action(view.render(false).tree, 'Add to Bag').props.onPress(); await flush();
   assert.equal(panel(view.render(false).tree), undefined, 'one message per screen, not one per card');
   assert.equal(viewBag(view.render(false).tree), undefined);
-  assert.deepEqual(view.notices, [{ variant: 'success', title: 'Added to your Bag', description: 'Mug · Size: Small. 3 items in your Bag.' }],
-    'the grid customer still hears the confirmed answer');
+  assert.deepEqual(view.notices, [{ variant: 'success', title: 'Added to your Bag', description: 'Vase. 1 item in your Bag.' }],
+    'the grid customer still hears the confirmed answer, for the piece that has nothing to choose');
 });
 
 test('a signed-out browse is unchanged: the card asks for an account and confirms nothing', async () => {
