@@ -3,21 +3,32 @@ import { Link, useFocusEffect } from 'expo-router';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActionButton } from '../../components/ActionButton';
+import { useToast } from '../../components/Toast';
 import { formatMoney } from '../../config/shop';
 import { useAuth } from '../auth/AuthContext';
 import { useProducts } from '../products/ProductContext';
 import { variantLabel } from '../products/variants';
 import { useBag } from './BagContext';
-import { cartLine, MAX_QUANTITY, type CartItem } from './cart';
+import { bagNotice } from './bagNotice';
+import { cartLine, MAX_QUANTITY, type CartAction, type CartItem } from './cart';
 
 function BagLine({ item }: { item: CartItem }) {
   const { state: catalogue } = useProducts();
   const bag = useBag();
+  const toast = useToast();
   const { busy: authBusy } = useAuth();
   const line = cartLine(item, catalogue.status === 'ready' ? catalogue.products : []);
   const disabled = authBusy || bag.state.status !== 'ready';
   const name = line.product?.name ?? 'Unavailable selection';
   const label = line.variant ? variantLabel(line.variant) : '';
+  // The banner is only raised after the shop's answer. An unconfirmed change gets the recovery warning instead of
+  // a success the customer cannot trust, and this screen's own error text carries no live region of its own.
+  const update = (action: CartAction, title: string) => {
+    void bag.dispatch(action).then(saved => {
+      if (saved) toast.notify({ variant: 'success', title });
+      else { const notice = bagNotice(bag.current()); if (notice) toast.notify(notice); }
+    });
+  };
   return <View style={styles.line}>
     <Text style={styles.name}>{name}</Text>
     {label ? <Text style={styles.text}>{label}</Text> : null}
@@ -29,18 +40,19 @@ function BagLine({ item }: { item: CartItem }) {
     <View style={styles.quantity}>
       <ActionButton label="−" accessibilityLabel={`Decrease ${name}${label ? `, ${label}` : ''} quantity`} secondary
         disabled={disabled || !line.available || item.quantity <= 1}
-        onPress={() => { void bag.dispatch({ type: 'set', variantId: item.variantId, quantity: item.quantity - 1 }); }} />
+        onPress={() => update({ type: 'set', variantId: item.variantId, quantity: item.quantity - 1 }, 'Bag updated')} />
       <ActionButton label="+" accessibilityLabel={`Increase ${name}${label ? `, ${label}` : ''} quantity`} secondary
         disabled={disabled || !line.available || item.quantity >= MAX_QUANTITY}
-        onPress={() => { void bag.dispatch({ type: 'set', variantId: item.variantId, quantity: item.quantity + 1 }); }} />
+        onPress={() => update({ type: 'set', variantId: item.variantId, quantity: item.quantity + 1 }, 'Bag updated')} />
       <ActionButton label="Remove" accessibilityLabel={`Remove ${name}${label ? `, ${label}` : ''} from Bag`} secondary disabled={disabled}
-        onPress={() => { void bag.dispatch({ type: 'remove', variantId: item.variantId }); }} />
+        onPress={() => update({ type: 'remove', variantId: item.variantId }, 'Item removed')} />
     </View>
   </View>;
 }
 
 export default function BagScreen() {
   const bag = useBag();
+  const toast = useToast();
   const { state: auth, busy: authBusy } = useAuth();
   const { state: catalogue, refresh: refreshCatalogue } = useProducts();
   const { refresh, signedIn } = bag;
@@ -66,7 +78,12 @@ export default function BagScreen() {
           {busy ? <View accessibilityLiveRegion="polite" style={styles.progress}><ActivityIndicator color="#535B40" accessibilityLabel={bag.state.status === 'saving' ? 'Saving your Bag' : 'Loading your Bag'} />
             <Text style={styles.text}>{bag.state.status === 'saving' ? 'Saving your Bag…' : 'Loading your Bag…'}</Text></View> : null}
           {bag.state.message ? <Text accessibilityRole="alert" style={styles.text}>{bag.state.message}</Text> : null}
-          {bag.state.canRetry ? <ActionButton label="Retry saved change" busy={busy} disabled={busy} secondary onPress={() => { void bag.retry(); }} /> : null}
+          {bag.state.canRetry ? <ActionButton label="Retry saved change" busy={busy} disabled={busy} secondary onPress={() => {
+            void bag.retry().then(saved => {
+              if (saved) toast.notify({ variant: 'success', title: 'Bag updated' });
+              else { const notice = bagNotice(bag.current()); if (notice) toast.notify(notice); }
+            });
+          }} /> : null}
           {catalogue.status === 'error' ? <><Text accessibilityRole="alert" style={styles.text}>Current prices and selections could not be loaded.</Text>
             <ActionButton label="Retry catalogue" secondary onPress={refreshCatalogue} /></> : null}
         </>}

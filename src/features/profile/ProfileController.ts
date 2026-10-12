@@ -36,7 +36,9 @@ export class ProfileController {
     const epoch = this.epoch; this.busy = true;
     this.publish({ ...this.state, status: 'saving', message: null, errors: {} });
     try { const saved = await this.repository.save(this.state.draft, fields); if (!this.current(epoch)) return false;
-      this.publish({ status: 'ready', saved, draft: { ...saved }, errors: {}, message: 'Your details have been saved.' }); return true;
+      // No message of its own: the toast announces the save, and the banner line stays reserved for problems so
+      // the same success is never read twice on this screen.
+      this.publish({ status: 'ready', saved, draft: { ...saved }, errors: {}, message: null }); return true;
     } catch { if (this.current(epoch)) this.publish({ ...this.state, status: 'ready', message: 'We could not confirm your save. Refresh to check your details before retrying.' }); return false; }
     finally { if (this.current(epoch)) this.busy = false; }
   };

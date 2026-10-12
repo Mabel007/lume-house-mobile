@@ -4,6 +4,9 @@ import type { CartAction } from './cart';
 
 export type BagContextValue = {
   state: BagState; signedIn: boolean;
+  // The state after an awaited change, not the one the screen rendered with: a caller finishing an action needs
+  // the controller's newest answer to know whether it succeeded, definitely failed, or is still unconfirmed.
+  current: () => BagState;
   refresh: () => Promise<void>; retry: () => Promise<boolean>;
   dispatch: (action: CartAction) => Promise<boolean>;
 };

@@ -3,11 +3,13 @@ import { randomUUID } from 'expo-crypto';
 import { getSupabaseClient } from '../../lib/supabase/client';
 import { useAuth } from '../auth/AuthContext';
 import { BagContext, type BagContextValue } from './BagContext';
-import { BagController } from './BagController';
+import { BagController, type BagState } from './BagController';
 import { changeVariantCart, loadVariantCart, sessionToken, VariantCartError } from './variantCartRepository';
 
+const guestBag: BagState = { status: 'ready', items: [], message: null, canRetry: false };
 const signedOut: BagContextValue = {
-  signedIn: false, state: { status: 'ready', items: [], message: null, canRetry: false },
+  signedIn: false, state: guestBag,
+  current: () => guestBag,
   refresh: async () => {}, retry: async () => false, dispatch: async () => false,
 };
 
@@ -43,6 +45,6 @@ function CustomerBag({ userId, children }: { userId: string; children: ReactNode
     void controller.refresh();
     return () => controller.deactivate();
   }, [controller]);
-  return <BagContext.Provider value={{ signedIn: true, state, dispatch: controller.dispatch,
+  return <BagContext.Provider value={{ signedIn: true, state, current: controller.getSnapshot, dispatch: controller.dispatch,
     refresh: controller.refresh, retry: controller.retry }}>{children}</BagContext.Provider>;
 }

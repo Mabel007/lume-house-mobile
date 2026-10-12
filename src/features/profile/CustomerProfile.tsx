@@ -1,6 +1,7 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { ActivityIndicator, Alert, BackHandler, Keyboard, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ActionButton } from '../../components/ActionButton';
+import { useToast } from '../../components/Toast';
 import type { FieldReveal } from '../../lib/scrollReveal';
 import type { ProfileController } from './ProfileController';
 import { editorFields, hasUnsavedChanges, type ProfileField } from './profile';
@@ -14,6 +15,16 @@ type Props = {
 
 export function CustomerProfile({ controller, editor, onEditorChange, revealField }: Props) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
+  const toast = useToast();
+  // A saved profile is announced once, by the banner. The controller leaves no message on a successful save so the
+  // persistent alert below stays reserved for the problems a customer has time to read and act on.
+  const saved = (fields: readonly ProfileField[]) => {
+    void controller.save(fields).then(ok => {
+      if (!ok) return;
+      onEditorChange(null);
+      toast.notify({ variant: 'success', title: 'Changes saved' });
+    });
+  };
   const busy = state.status === 'loading' || state.status === 'saving';
   const dirty = !busy && editor !== null && hasUnsavedChanges(state.saved, state.draft, editorFields[editor]);
   const keyboardOpen = useRef(false);
@@ -53,7 +64,7 @@ export function CustomerProfile({ controller, editor, onEditorChange, revealFiel
       <Text accessibilityRole="header" style={styles.heading}>Personal Information</Text>
       {editor === 'profile' ? <View style={styles.editor} ref={instance => { editorBlock.current = instance; }} onLayout={() => reveal.current(editorBlock.current)}>
         {field('full_name', 'Full name')}{field('phone', 'Contact phone')}
-        <ActionButton label={state.status === 'saving' ? 'Saving…' : 'Save profile'} busy={busy} disabled={busy} onPress={() => { void controller.save(editorFields.profile).then(saved => { if (saved) onEditorChange(null); }); }} />
+        <ActionButton label={state.status === 'saving' ? 'Saving…' : 'Save profile'} busy={busy} disabled={busy} onPress={() => saved(editorFields.profile)} />
         <ActionButton label="Cancel profile changes" secondary disabled={busy} onPress={() => { controller.cancel(); onEditorChange(null); }} />
       </View> : <>
         <Text style={styles.text}>{state.saved.full_name || 'No name saved.'}</Text>
@@ -67,7 +78,7 @@ export function CustomerProfile({ controller, editor, onEditorChange, revealFiel
         {field('full_name', 'Delivery contact name')}{field('phone', 'Delivery contact phone')}
         {field('default_street_address', 'Street address / landmark')}{field('default_area', 'Area / community')}{field('default_city', 'City / town')}
         <Text style={styles.text}>Saved defaults are optional. Checkout will ask for any required missing details.</Text>
-        <ActionButton label={state.status === 'saving' ? 'Saving…' : 'Save delivery details'} disabled={busy} busy={busy} onPress={() => { void controller.save(editorFields.delivery).then(saved => { if (saved) onEditorChange(null); }); }} />
+        <ActionButton label={state.status === 'saving' ? 'Saving…' : 'Save delivery details'} disabled={busy} busy={busy} onPress={() => saved(editorFields.delivery)} />
         <ActionButton label="Cancel delivery changes" secondary disabled={busy} onPress={() => { controller.cancel(); onEditorChange(null); }} />
       </View> : <>
         <Text style={styles.text}>{[state.saved.default_street_address, state.saved.default_area, state.saved.default_city].filter(Boolean).join('\n') || 'No delivery address saved.'}</Text>

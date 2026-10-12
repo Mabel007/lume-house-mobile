@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ActionButton } from '../../components/ActionButton';
+import { useToast } from '../../components/Toast';
 import { getSupabaseClient } from '../../lib/supabase/client';
 import { maximumReasonLength, type CancellationRequest } from './cancellation';
 import { getCancellation, requestCancellation } from './cancellationRepository';
@@ -23,6 +24,7 @@ type Read = { key: string; status: 'loading' | 'ready' | 'error'; request: Cance
 type Send = { key: string; busy: boolean; message: string | null };
 
 export function CancellationPanel({ userId, order }: { userId: string; order: OrderDetail }) {
+  const toast = useToast();
   const [reason, setReason] = useState('');
   const [revision, setRevision] = useState(0);
   const [read, setRead] = useState<Read>({ key: '', status: 'loading', request: null, message: null });
@@ -62,6 +64,8 @@ export function CancellationPanel({ userId, order }: { userId: string; order: Or
         pendingReason.current = null;
         setRead({ key: readKey, status: 'ready', request, message: null });
         setSend({ key: readKey, busy: false, message: null });
+        // The request only: no words here say the order moved, because the record the shop returned is what says that.
+        toast.notify({ variant: 'success', title: 'Cancellation request submitted' });
       }
     } catch (cause) {
       // The request may exist at the shop even when this answer was lost, so the retry keeps its own reason.

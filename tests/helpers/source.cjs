@@ -17,6 +17,13 @@ native.BackHandler = { addEventListener: (type, listener) => {
 } };
 native.Keyboard = { addListener: (type, listener) => { const entry = { type, listener }; events.keyboard.push(entry); return { remove: () => remove(events.keyboard, entry) }; }, dismiss: () => { events.dismissed++; } };
 native.Alert = { alert: (...args) => { events.alerts.push(args); } };
+// Context is simulated as its default value: a component mounted here runs without a provider tree, so the provider
+// is tested directly and a screen that must observe a call mocks the module instead. Shared so a test file with its
+// own hook slots uses exactly the same context behaviour as hooks().
+const contextShims = {
+  createContext: value => ({ __default: value, Provider: 'ContextProvider' }),
+  useContext: context => context?.__default,
+};
 function pressBack() {
   // React Native runs hardware back listeners newest-first and stops at the first that returns true.
   for (const listener of [...events.back].reverse()) if (listener() === true) return true;
@@ -30,7 +37,9 @@ function load(file, overrides = {}) {
   const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: {
     module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX,
   } }).outputText;
-  vm.runInNewContext(code, { module: fixture, exports: fixture.exports, URL, AbortController, require: name => {
+  // A vm realm has no timers of its own, so it shares this process's: a banner that schedules its own dismissal
+  // therefore runs against the same setTimeout a test can control.
+  vm.runInNewContext(code, { module: fixture, exports: fixture.exports, URL, AbortController, setTimeout, clearTimeout, require: name => {
     if (Object.hasOwn(overrides, name)) return overrides[name];
     if (name === 'react/jsx-runtime') return require('react/jsx-runtime');
     if (name === 'react-native') return native;
@@ -52,6 +61,7 @@ function hooks() {
       if (!(slot in slots)) slots[slot] = typeof initial === 'function' ? initial() : initial;
       return [slots[slot], value => { slots[slot] = typeof value === 'function' ? value(slots[slot]) : value; }];
     }, useCallback: fn => fn,
+    ...contextShims,
     useRef: initial => { const slot = index++; if (!(slot in slots)) slots[slot] = { current: initial }; return slots[slot]; },
     // The snapshot is re-read on every render, as React does. The listener is a placeholder because this
     // harness re-renders explicitly; an external store's change therefore appears on the next render.
@@ -115,4 +125,4 @@ function duplicateKeys(element, report = []) {
   for (const child of children) duplicateKeys(child, report);
   return report;
 }
-module.exports = { load, hooks, find, expand, duplicateKeys, attachRefs, native, events, pressBack, keyDown, resetEvents };
+module.exports = { load, hooks, find, expand, duplicateKeys, attachRefs, native, events, pressBack, keyDown, resetEvents, contextShims };

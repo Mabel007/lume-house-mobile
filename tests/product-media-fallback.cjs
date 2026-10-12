@@ -6,6 +6,7 @@ const vm = require('node:vm');
 const test = require('node:test');
 const ts = require('typescript');
 const jsxRuntime = require('react/jsx-runtime');
+const { contextShims } = require('./helpers/source.cjs');
 const native = { Text: 'Text', View: 'View', Pressable: 'Pressable', StyleSheet: { create: value => value } };
 
 function load(file, overrides = {}) {
@@ -18,6 +19,7 @@ function load(file, overrides = {}) {
       if (Object.hasOwn(overrides, name)) return overrides[name];
       if (name === 'react/jsx-runtime') return jsxRuntime;
       if (name === 'react-native') return native;
+      if (name === 'react-native-safe-area-context') return { SafeAreaView: 'SafeAreaView' };
       if (!name.startsWith('.')) throw new Error(`Unmocked dependency: ${name}`);
       const base = path.resolve(path.dirname(file), name);
       const next = ['.ts', '.tsx'].map(extension => base + extension).find(candidate => fs.existsSync(candidate));
@@ -35,7 +37,7 @@ function hooks() {
       const slot = index++;
       if (!(slot in slots)) slots[slot] = typeof initial === 'function' ? initial() : initial;
       return [slots[slot], value => { slots[slot] = typeof value === 'function' ? value(slots[slot]) : value; }];
-    }, useCallback: callback => callback, useEffect: effect => { effects.push(effect); } },
+    }, useCallback: callback => callback, useEffect: effect => { effects.push(effect); }, ...contextShims },
   };
 }
 const flush = async () => { for (let index = 0; index < 8; index++) await Promise.resolve(); };

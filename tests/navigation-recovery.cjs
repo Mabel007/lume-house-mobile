@@ -30,7 +30,7 @@ function bagScreen() {
   let catalogue = { status: 'ready', products: [] }; let focus; const calls = [];
   const Screen = load('src/features/cart/BagScreen.tsx', {
     react: host.react, 'expo-router': { Link: 'Link', useFocusEffect: effect => { focus = effect; } },
-    './BagContext': { useBag: () => ({ signedIn, state, refresh: async () => { calls.push('bag'); }, retry: async () => { calls.push('retry'); } }) },
+    './BagContext': { useBag: () => ({ signedIn, state, current: () => state, refresh: async () => { calls.push('bag'); }, retry: async () => { calls.push('retry'); } }) },
     '../auth/AuthContext': { useAuth: () => ({ state: { status: signedIn ? 'signed-in' : 'signed-out' }, busy: false }) },
     '../products/ProductContext': { useProducts: () => ({ state: catalogue, refresh: () => { calls.push('catalogue'); } }) },
   }).default;

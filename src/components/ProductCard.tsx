@@ -9,12 +9,14 @@ import { useAuth } from '../features/auth/AuthContext';
 import { useBag } from '../features/cart/BagContext';
 import { MAX_QUANTITY } from '../features/cart/cart';
 import { ActionButton } from './ActionButton';
+import { useToast } from './Toast';
 import { productHref } from '../features/products/productRoute';
 export function ProductCard({ product, details = false }: { product: Product; details?: boolean }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
   const { state: auth, busy: authBusy } = useAuth();
   const bag = useBag();
+  const toast = useToast();
   const variants = product.variants ?? [];
   const optionsRequired = requiresOptions(variants);
   const variant = selectedVariant(variants, selectedId);
@@ -30,7 +32,12 @@ export function ProductCard({ product, details = false }: { product: Product; de
     setConfirmation(null);
     if (!available || !variant || busy || recovering || limitReached) return;
     if (!bag.signedIn) { router.navigate('/account'); return; }
-    if (await bag.dispatch({ type: 'add', variantId: variant.id })) setConfirmation('Added to your Bag.');
+    if (await bag.dispatch({ type: 'add', variantId: variant.id })) {
+      setConfirmation('Added to your Bag.');
+      // The banner is the announcement and the line below stays as the visible record, so the same words are
+      // never read twice by the screen reader.
+      toast.notify({ variant: 'success', title: 'Added to your Bag' });
+    }
   }
   const information = <>
     <View style={[styles.photo, { backgroundColor: product.color }]}>
@@ -77,7 +84,7 @@ export function ProductCard({ product, details = false }: { product: Product; de
         accessibilityLabel={`Add ${product.name}${variant ? `, ${variantLabel(variant) || 'standard selection'}` : ''} to Bag`}
         busy={busy} disabled={!available || busy || recovering || limitReached} onPress={() => { void add(); }} />
       {product.variants === undefined ? <Text style={styles.category}>Selections are unavailable. Refresh the catalogue to try again.</Text> : null}
-      {confirmation ? <Text accessibilityLiveRegion="polite" style={styles.optionText}>{confirmation}</Text> : null}
+      {confirmation ? <Text style={styles.optionText}>{confirmation}</Text> : null}
     </View>
   </View>;
 }

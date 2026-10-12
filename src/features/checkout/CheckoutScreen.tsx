@@ -9,6 +9,7 @@ import { useAuth } from '../auth/AuthContext';
 import { useBag } from '../cart/BagContext';
 import { cartLine, type CartItem } from '../cart/cart';
 import { useProducts } from '../products/ProductContext';
+import { useToast, type ToastApi } from '../../components/Toast';
 import { variantLabel } from '../products/variants';
 import type { Product } from '../products/products';
 import { emptyProfile, type Profile } from '../profile/profile';
@@ -111,6 +112,10 @@ function CheckoutFlow({ userId, email, busy, pieces, items, products, reveal, re
   const keepBag = useRef(refreshBag);
   const confirmed = useRef(false);
   const [controller] = useState(() => new CheckoutController(getSupabaseClient(), userId, keyStorage, randomUUID));
+  const toast = useToast();
+  // The context callback changes whenever a banner is raised, so the placement effect keeps it in a ref and still
+  // fires on the submission alone: an order is announced exactly once, on the answer that placed it.
+  const announce = useRef<ToastApi['notify']>(() => {});
   const submission = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   useEffect(() => {
     let active = true;
@@ -127,6 +132,7 @@ function CheckoutFlow({ userId, email, busy, pieces, items, products, reveal, re
     return () => controller.deactivate();
   }, [controller]);
   useEffect(() => { keepBag.current = refreshBag; });
+  useEffect(() => { announce.current = toast.notify; });
   useEffect(() => {
     // The Bag is server state: the order service emptied it, so this screen reloads instead of editing a local copy.
     if (submission.status === 'placed') { dirty.current = false; keepBag.current(); }
@@ -138,6 +144,9 @@ function CheckoutFlow({ userId, email, busy, pieces, items, products, reveal, re
     if (submission.status !== 'placed' || !submission.orderId) return;
     if (confirmed.current) return;
     confirmed.current = true;
+    // Placed means the shop holds the order, and the copy says exactly that: no branch of this notice claims a
+    // payment. It fires on the same ref guard as the navigation, so a re-render can never raise it twice.
+    announce.current({ variant: 'success', title: 'Order placed', description: 'Awaiting payment confirmation. Nothing has been charged by this app.' });
     if (submission.emailStatus) rememberPlacedEmail(submission.orderId, submission.emailStatus);
     router.replace({ pathname: '/orders/[orderId]', params: { orderId: submission.orderId, received: '1' } });
   }, [submission]);
@@ -164,7 +173,7 @@ function CheckoutFlow({ userId, email, busy, pieces, items, products, reveal, re
   // A field only reports once the customer has entered it and moved on, so an untouched form never reads as a wall of errors.
   const touch = (field: CheckoutField) => setTouched(current => current[field] ? current : { ...current, [field]: true });
   const fee = deliveryFee(draft);
-  if (submission.status === 'placed') return <Text accessible accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.notice}>Your order is saved. Opening your order confirmation…</Text>;
+  if (submission.status === 'placed') return <Text accessible accessibilityRole="alert" style={styles.notice}>Your order is saved. Opening your order confirmation…</Text>;
   const blocked = busy || !pieces.length || pieces.some(piece => !piece.available) || fee === null ||
     submission.status === 'submitting' || submission.status === 'checking';
   const place = () => {
