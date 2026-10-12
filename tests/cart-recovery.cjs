@@ -100,10 +100,11 @@ test('grid cards stay silent because the catalogue header owns the shared Bag re
   const view = catalogue(errorState);
   assert.equal(find(view.header, element => element.props?.accessibilityRole === 'alert').props.children, errorState.message);
   const bagLinks = collect(view.header, element => element.type === 'Link' && element.props.href === '/bag');
-  assert.equal(bagLinks.length, 2, 'the header keeps its Bag route and gains a recovery route beside the actions');
-  assert.ok(find(bagLinks[0], element => element.type === 'Text' && element.props.children === 'Your Bag'));
-  assert.ok(find(bagLinks[1], element => element.type === 'Text' && element.props.children === 'Review your Bag'),
+  assert.equal(bagLinks.length, 1, 'the recovery row keeps its own route beside the actions');
+  assert.ok(find(bagLinks[0], element => element.type === 'Text' && element.props.children === 'Review your Bag'),
     'the route to the full Bag stays available');
+  assert.equal(collect(view.header, element => element.type?.name === 'BagLink').length, 1,
+    'the header still offers the shared Bag destination next to it');
   find(view.header, element => element.props?.label === 'Refresh Bag').props.onPress();
   assert.deepEqual(view.calls, ['refresh']);
   assert.equal(find(view.header, element => element.props?.label === 'Retry saved change'), undefined);

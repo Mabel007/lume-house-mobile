@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const test = require('node:test');
-const { load, hooks, find } = require('./helpers/source.cjs');
+const { load, hooks, find, expand } = require('./helpers/source.cjs');
 const { findRouteProduct, productHref } = load('src/features/products/productRoute.ts');
 const product = { id: 'real-a', name: 'Mug', category: 'Dining', description: 'Full product description',
   image: 'unsafe', color: '#FFFFFF', price: 900, variants: [
@@ -17,13 +17,16 @@ test('exact public identity lookup and encoded route never synthesize products/v
 });
 function details(initial = { status: 'ready', products: [product] }, id = 'real-a') {
   let state = initial; let routeId = id; let refreshes = 0; let canGoBack = false; const navigation = [];
+  const host = hooks();
   const Screen = load('src/features/products/ProductDetailsScreen.tsx', {
+    react: host.react,
     'expo-router': { Link: 'Link', useLocalSearchParams: () => ({ productId: routeId }), router: {
       canGoBack: () => canGoBack, back: () => navigation.push('back'), replace: path => navigation.push(path),
     } }, '../../components/ProductCard': { ProductCard: 'ProductCard' },
+    '../features/cart/BagContext': { useBag: () => ({ signedIn: true, state: { status: 'ready', items: [] } }) },
     './ProductContext': { useProducts: () => ({ state, refresh: () => { refreshes++; } }) },
   }).default;
-  return { render: () => Screen(), setState: value => { state = value; }, setId: value => { routeId = value; },
+  return { render: () => { host.begin(); return Screen(); }, setState: value => { state = value; }, setId: value => { routeId = value; },
     setBack: value => { canGoBack = value; }, navigation, refreshes: () => refreshes };
 }
 test('cold route loads through shared provider; loading/error/retry/unknown/archive stay safe', () => {
@@ -44,8 +47,10 @@ test('changing product changes keyed selection instance and deep-link back has a
   view.setId('real-b'); assert.equal(find(view.render(), element => element.type === 'ProductCard').key, 'real-b');
   find(view.render(), element => element.props?.label === 'Back').props.onPress(); assert.equal(view.navigation[0], '/');
   view.setBack(true); find(view.render(), element => element.props?.label === 'Back').props.onPress(); assert.equal(view.navigation[1], 'back');
-  assert.ok(find(view.render(), element => element.type === 'Link' && element.props.href === '/bag'));
-  assert.ok(find(view.render(), element => element.type === 'Link' && element.props.href === '/account'));
+  assert.ok(find(expand(view.render()), element => element.type === 'Link' && element.props.href === '/bag'),
+    'the shared Bag destination is on the product page');
+  assert.ok(find(expand(view.render()), element => element.type === 'Link' && element.props.href === '/account'),
+    'and so is the account one');
 });
 function card(signedIn, initial = product) {
   const host = hooks(); const actions = []; const navigation = [];

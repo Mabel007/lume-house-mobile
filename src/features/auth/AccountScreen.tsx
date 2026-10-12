@@ -6,6 +6,7 @@ import { useAuth } from './AuthContext';
 import { localFixtureAvailable } from './localFixtureAuth';
 import { revealField, type FieldReveal, type RevealerNode, type ScrollFrame } from '../../lib/scrollReveal';
 import { AccountDashboard } from '../account/AccountDashboard';
+import { BagLink } from '../../components/CommerceNav';
 
 function metadataName(user: { user_metadata?: Record<string, unknown> } | undefined) {
   const metadata = user?.user_metadata;
@@ -56,7 +57,7 @@ export default function AccountScreen() {
         </View> : null}
         {!local ? <Pressable accessibilityRole="button" accessibilityLabel="Continue with Google" accessibilityState={{ disabled: loading, busy: loading }} disabled={loading} onPress={() => { void signIn(); }} style={[styles.button, loading && styles.disabled]}><Text style={styles.buttonText}>Continue with Google</Text></Pressable> : null}
       </> : null}
-      <Link href="/bag" asChild><Pressable accessibilityRole="link" style={styles.link}><Text style={styles.text}>View your Bag</Text></Pressable></Link>
+      <BagLink label="View your Bag" />
       <Link href="/" asChild><Pressable accessibilityRole="link" style={styles.link}><Text style={styles.text}>Browse the collection</Text></Pressable></Link>
     </View>
   </ScrollView></KeyboardAvoidingView></SafeAreaView>;

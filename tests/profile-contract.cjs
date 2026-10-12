@@ -6,11 +6,14 @@ const { ProfileController } = load('src/features/profile/ProfileController.ts');
 const { loadProfile, saveProfile } = load('src/features/profile/profileRepository.ts');
 const plain = value => JSON.parse(JSON.stringify(value));
 const blank = () => ({ ...profile.emptyProfile });
+// The Account screen carries the shared Bag destination, which reads the server Bag exactly as the app's provider
+// hands it to every screen: mocked here so this file stays about the profile.
+const bagContext = { '../features/cart/BagContext': { useBag: () => ({ signedIn: true, state: { status: 'ready', items: [{ variantId: 'a', quantity: 1 }] } }) } };
 test('account dashboard is keyed per customer and hidden immediately on sign-out', () => {
   const { native, find } = require('./helpers/source.cjs');
   let state = { status: 'signed-in', user: { id: 'a', email: 'a@example.invalid', user_metadata: { full_name: 'Customer A' } } };
   const Screen = load('src/features/auth/AccountScreen.tsx', { react: { useState: value => [value, () => {}], useRef: value => ({ current: value }), useEffect: () => {} }, 'react-native': native,
-    'expo-router': { Link: 'Link' }, '../account/AccountDashboard': { AccountDashboard: 'AccountDashboard' }, './localFixtureAuth': { localFixtureAvailable: () => true },
+    'expo-router': { Link: 'Link' }, '../account/AccountDashboard': { AccountDashboard: 'AccountDashboard' }, './localFixtureAuth': { localFixtureAvailable: () => true }, ...bagContext,
     './AuthContext': { useAuth: () => ({ state, busy: false, message: null }) } }).default;
   let dashboard = find(Screen(), element => element.type === 'AccountDashboard');
   assert.equal(dashboard.key, 'a'); assert.equal(dashboard.props.userId, 'a'); assert.equal(dashboard.props.accountName, 'Customer A');
@@ -27,7 +30,7 @@ test('account screen renders no duplicate sibling keys in any status', () => {
   const { native, find, duplicateKeys } = require('./helpers/source.cjs');
   let state = { status: 'signed-in', user: { id: 'a', email: 'a@example.invalid' } };
   const Screen = load('src/features/auth/AccountScreen.tsx', { react: { useState: value => [value, () => {}], useRef: value => ({ current: value }), useEffect: () => {} }, 'react-native': native,
-    'expo-router': { Link: 'Link' }, '../account/AccountDashboard': { AccountDashboard: 'AccountDashboard' }, './localFixtureAuth': { localFixtureAvailable: () => true },
+    'expo-router': { Link: 'Link' }, '../account/AccountDashboard': { AccountDashboard: 'AccountDashboard' }, './localFixtureAuth': { localFixtureAvailable: () => true }, ...bagContext,
     './AuthContext': { useAuth: () => ({ state, busy: false, message: 'Loading' }) } }).default;
   for (const next of [
     { status: 'signed-in', user: { id: 'a', email: 'a@example.invalid' } },
@@ -164,7 +167,7 @@ function mountAccount() {
   const host = hooks();
   const state = { status: 'signed-in', user: { id: 'a', email: 'a@example.invalid', user_metadata: { full_name: 'Customer A' } } };
   const Screen = load('src/features/auth/AccountScreen.tsx', { react: host.react, 'react-native': native,
-    'expo-router': { Link: 'Link' }, '../account/AccountDashboard': { AccountDashboard: 'AccountDashboard' }, './localFixtureAuth': { localFixtureAvailable: () => true },
+    'expo-router': { Link: 'Link' }, '../account/AccountDashboard': { AccountDashboard: 'AccountDashboard' }, './localFixtureAuth': { localFixtureAvailable: () => true }, ...bagContext,
     './AuthContext': { useAuth: () => ({ state, busy: false, message: null }) } }).default;
   return { host, render: () => { host.begin(); return Screen(); } };
 }

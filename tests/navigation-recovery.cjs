@@ -1,13 +1,14 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const test = require('node:test');
-const { load, hooks, find, expand, native } = require('./helpers/source.cjs');
+const { load, hooks, find, expand, native, contextShims } = require('./helpers/source.cjs');
+const guest = { useBag: () => ({ signedIn: false, state: { status: 'ready', items: [] } }) };
 test('Account restoration hides auth actions; signed-out/in actions have labels and preserve existing handlers', () => {
   let state = { status: 'restoring' }; let busy = false; const actions = [];
   const Screen = load('src/features/auth/AccountScreen.tsx', {
-    react: { useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}], useEffect: () => {}, useRef: value => ({ current: value }), useSyncExternalStore: (subscribe, get) => get() },
+    react: { ...contextShims, useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}], useEffect: () => {}, useRef: value => ({ current: value }), useSyncExternalStore: (subscribe, get) => get() },
     '../profile/CustomerProfile': { CustomerProfile: 'CustomerProfile' }, '../../lib/supabase/client': { getSupabaseClient: () => ({}) },
-    './localFixtureAuth': { localFixtureAvailable: () => false },
+    './localFixtureAuth': { localFixtureAvailable: () => false }, '../features/cart/BagContext': guest,
     'expo-router': { Link: 'Link' }, './AuthContext': { useAuth: () => ({ state, busy, message: null,
       signIn: async () => { actions.push('in'); }, signOut: async () => { actions.push('out'); } }) },
   }).default;
@@ -71,7 +72,11 @@ test('large-text catalogue uses one column and keeps Account/Bag links and keybo
   }).default;
   host.begin(); const list = find(Screen(), element => element.type === 'FlatList');
   assert.equal(list.props.numColumns, 1); assert.equal(list.props.keyboardShouldPersistTaps, 'handled');
-  for (const href of ['/account', '/bag']) assert.ok(find(list.props.ListHeaderComponent, element => element.type === 'Link' && element.props.href === href));
+  // The two destinations now arrive as the shared components, so at font scale 2 the assertion is that the header
+  // still mounts both of them; their own size and wrapping are tested where they are defined.
+  for (const name of ['AccountLink', 'BagLink']) {
+    assert.ok(find(list.props.ListHeaderComponent, element => element.type?.name === name), `the header keeps its ${name} destination`);
+  }
 });
 test('repeated signed-out Add uses navigate instead of forced push; callback replace and provider scope remain intact', () => {
   const host = hooks(); const calls = [];

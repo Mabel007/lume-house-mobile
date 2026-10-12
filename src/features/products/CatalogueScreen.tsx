@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ProductCard } from '../../components/ProductCard';
+import { AccountLink, BagLink } from '../../components/CommerceNav';
 import { useProducts } from './ProductContext';
 import { useBag } from '../cart/BagContext';
 import { ActionButton } from '../../components/ActionButton';
@@ -23,8 +24,7 @@ export default function CatalogueScreen() {
       keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
       contentContainerStyle={styles.content} renderItem={({ item }) => <ProductCard product={item} />}
       ListHeaderComponent={<View style={styles.header}><Text accessibilityRole="header" style={styles.brand}>Lumé House</Text>
-        <View style={styles.links}><Link href="/account" asChild><Pressable accessibilityRole="link" style={styles.link}><Text style={styles.intro}>Your account</Text></Pressable></Link>
-          <Link href="/bag" asChild><Pressable accessibilityRole="link" style={styles.link}><Text style={styles.intro}>Your Bag</Text></Pressable></Link></View>
+        <View style={styles.links}><AccountLink /><BagLink /></View>
         <Text style={styles.tagline}>Beautiful things live here.</Text><Text accessibilityRole="header" style={styles.title}>Considered living</Text><Text style={styles.intro}>Warm textures and thoughtful essentials for your home.</Text>
         {bag.signedIn && bag.state.message ? <View style={styles.bagMessage}><Text accessible accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.intro}>{bag.state.message}</Text>
           <View style={styles.bagRecovery}>

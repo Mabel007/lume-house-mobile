@@ -24,6 +24,9 @@ const contextShims = {
   createContext: value => ({ __default: value, Provider: 'ContextProvider' }),
   useContext: context => context?.__default,
 };
+// Every glyph set resolves to its own name, so a test finds an icon by element type and reads its props without a
+// font on the machine: the icon is decoration here, and the words beside it are what the assertions are about.
+const iconSets = new Proxy({}, { get: (sets, name) => (typeof name === 'string' ? name : undefined) });
 function pressBack() {
   // React Native runs hardware back listeners newest-first and stops at the first that returns true.
   for (const listener of [...events.back].reverse()) if (listener() === true) return true;
@@ -45,6 +48,7 @@ function load(file, overrides = {}) {
     if (name === 'react-native') return native;
     if (name === 'expo-web-browser') return webBrowser;
     if (name === 'react-native-safe-area-context') return { SafeAreaView: 'SafeAreaView' };
+    if (name === '@expo/vector-icons') return iconSets;
     if (!name.startsWith('.')) throw new Error(`Unmocked dependency: ${name}`);
     const base = path.resolve(path.dirname(file), name);
     const next = ['.ts', '.tsx'].map(extension => base + extension).find(candidate => fs.existsSync(candidate));

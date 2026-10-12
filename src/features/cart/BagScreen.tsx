@@ -3,6 +3,7 @@ import { Link, useFocusEffect } from 'expo-router';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActionButton } from '../../components/ActionButton';
+import { AccountLink } from '../../components/CommerceNav';
 import { useToast } from '../../components/Toast';
 import { formatMoney } from '../../config/shop';
 import { useAuth } from '../auth/AuthContext';
@@ -74,7 +75,7 @@ export default function BagScreen() {
         </> : <>
           <Text style={styles.text}>Saved to your account. Refresh to load changes from another device.</Text>
           <ActionButton label="Refresh Bag" busy={busy} disabled={busy} onPress={() => { refreshCatalogue(); void refresh(); }} />
-          <Link href="/account" asChild><Pressable accessibilityRole="link" style={styles.link}><Text style={styles.text}>Your account</Text></Pressable></Link>
+          <AccountLink />
           {busy ? <View accessibilityLiveRegion="polite" style={styles.progress}><ActivityIndicator color="#535B40" accessibilityLabel={bag.state.status === 'saving' ? 'Saving your Bag' : 'Loading your Bag'} />
             <Text style={styles.text}>{bag.state.status === 'saving' ? 'Saving your Bag…' : 'Loading your Bag…'}</Text></View> : null}
           {bag.state.message ? <Text accessibilityRole="alert" style={styles.text}>{bag.state.message}</Text> : null}
