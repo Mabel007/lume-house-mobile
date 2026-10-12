@@ -121,19 +121,24 @@ test('an Add the shop confirmed is announced once, and one it refused is never a
   const host = hooks(); const notices = spy('./Toast');
   let outcome = true;
   const bag = { signedIn: true, state: { status: 'ready', items: [], message: null, canRetry: false },
-    current: () => bag.state, refresh: async () => {}, retry: async () => false, dispatch: async () => outcome };
+    current: () => bag.state, refresh: async () => {}, retry: async () => false, dispatch: async () => {
+      if (!outcome) return false;
+      bag.state = { status: 'ready', items: [{ ...cartItem, quantity: 3 }], message: null, canRetry: false };
+      return true;
+    } };
   const { ProductCard } = load('src/components/ProductCard.tsx', {
-    react: host.react, 'expo-router': { router: { navigate: () => {} } },
+    react: host.react, 'expo-router': { Link: 'Link', router: { navigate: () => {} } },
     './ProductImage': { ProductImage: 'ProductImage' }, './ActionButton': { ActionButton: 'ActionButton' },
     '../features/auth/AuthContext': { useAuth: () => ({ state: { status: 'signed-in' }, busy: false }) },
     '../features/cart/BagContext': { useBag: () => bag }, ...notices.override,
   });
   const render = () => { host.begin(); return expand(ProductCard({ product, details: true })); };
   action(render(), 'Add to Bag').props.onPress(); await flush();
-  assert.deepEqual(notices.notices, [{ variant: 'success', title: 'Added to your Bag' }],
-    'the banner follows the confirmed answer, and only it announces the success');
-  assert.equal(find(render(), element => element.props?.children === 'Added to your Bag.').props.accessibilityLiveRegion, undefined,
-    'the line left on the card is visible, not a second announcement of the same words');
+  assert.deepEqual(notices.notices, [{ variant: 'success', title: 'Added to your Bag', description: 'Mug. 3 items in your Bag.' }],
+    'the banner follows the confirmed answer and carries the count the shop now holds');
+  const record = find(render(), element => element.props?.children === 'Added to your Bag');
+  assert.equal(record.props.accessibilityLiveRegion, undefined,
+    'the record left on the card is visible, not a second announcement of the same words');
   notices.notices.length = 0; outcome = false; bag.state = definite;
   action(render(), 'Add to Bag').props.onPress(); await flush();
   assert.deepEqual(notices.notices, [], 'a refused Add raises no success, and the recovery panel stays the one message');

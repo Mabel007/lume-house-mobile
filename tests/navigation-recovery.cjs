@@ -76,10 +76,10 @@ test('large-text catalogue uses one column and keeps Account/Bag links and keybo
 test('repeated signed-out Add uses navigate instead of forced push; callback replace and provider scope remain intact', () => {
   const host = hooks(); const calls = [];
   const Card = load('src/components/ProductCard.tsx', {
-    react: host.react, 'expo-router': { router: { navigate: path => calls.push(path), push: () => { throw new Error('Forced duplicate push'); } } },
+    react: host.react, 'expo-router': { Link: 'Link', router: { navigate: path => calls.push(path), push: () => { throw new Error('Forced duplicate push'); } } },
     './ProductImage': { ProductImage: 'ProductImage' }, './ActionButton': { ActionButton: 'ActionButton' },
     '../features/auth/AuthContext': { useAuth: () => ({ state: { status: 'signed-out' }, busy: false }) },
-    '../features/cart/BagContext': { useBag: () => ({ signedIn: false, state: { status: 'ready', items: [] } }) },
+    '../features/cart/BagContext': { useBag: () => ({ signedIn: false, state: { status: 'ready', items: [] }, current: () => ({ status: 'ready', items: [] }) }) },
   }).ProductCard;
   host.begin(); const tree = Card({ product: { id: 'actual', name: 'Mug', price: 100, image: '', category: 'Dining', color: '#FFFFFF',
     variants: [{ id: 'actual-variant', productId: 'actual', options: {}, isDefault: true, price: 100, inventoryPolicy: 'untracked' }] } });

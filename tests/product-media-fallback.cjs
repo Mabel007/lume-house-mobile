@@ -174,10 +174,11 @@ function find(element, predicate) {
 test('image failure does not disable available variant selection/add or enable unavailable variants', async () => {
   const host = hooks(); const actions = [];
   const { ProductCard } = load('src/components/ProductCard.tsx', {
-    react: host.react, 'expo-router': { router: { push: () => {} } }, './ProductImage': { ProductImage: 'ProductImage' },
+    react: host.react, 'expo-router': { Link: 'Link', router: { push: () => {} } }, './ProductImage': { ProductImage: 'ProductImage' },
     './ActionButton': { ActionButton: 'ActionButton' },
     '../features/auth/AuthContext': { useAuth: () => ({ state: { status: 'signed-in' }, busy: false }) },
     '../features/cart/BagContext': { useBag: () => ({ signedIn: true, state: { status: 'ready', items: [] },
+      current: () => ({ status: 'ready', items: [] }),
       dispatch: async action => { actions.push(action); return true; } }) },
   });
   const product = { ...parseProducts([row('a', 'unsafe')], 'NLE')[0], variants: [

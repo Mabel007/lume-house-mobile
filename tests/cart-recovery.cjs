@@ -21,10 +21,11 @@ const addButton = tree => collect(tree, element => element.type === 'ActionButto
 function card(state, signedIn = true) {
   const host = hooks(); const calls = [];
   const bag = { signedIn, state, refresh: async () => { calls.push('refresh'); }, retry: async () => { calls.push('retry'); return true; },
-    dispatch: async action => { calls.push(`dispatch:${action.type}`); return true; } };
+    dispatch: async action => { calls.push(`dispatch:${action.type}`); return true; },
+    current: () => ({ status: 'ready', items: [], message: null, canRetry: false }) };
   const { ProductCard } = load('src/components/ProductCard.tsx', {
     react: host.react,
-    'expo-router': { router: { navigate: path => calls.push(`navigate:${path}`), push: () => { throw new Error('Forced duplicate push'); } } },
+    'expo-router': { Link: 'Link', router: { navigate: path => calls.push(`navigate:${path}`), push: () => { throw new Error('Forced duplicate push'); } } },
     './ProductImage': { ProductImage: 'ProductImage' }, './ActionButton': { ActionButton: 'ActionButton' },
     '../features/auth/AuthContext': { useAuth: () => ({ state: { status: 'signed-in' }, busy: false }) },
     '../features/cart/BagContext': { useBag: () => bag },

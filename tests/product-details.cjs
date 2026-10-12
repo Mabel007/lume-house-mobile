@@ -50,10 +50,11 @@ test('changing product changes keyed selection instance and deep-link back has a
 function card(signedIn, initial = product) {
   const host = hooks(); const actions = []; const navigation = [];
   const { ProductCard } = load('src/components/ProductCard.tsx', {
-    react: host.react, 'expo-router': { router: { push: path => navigation.push(path), navigate: path => navigation.push(path) } },
+    react: host.react, 'expo-router': { Link: 'Link', router: { push: path => navigation.push(path), navigate: path => navigation.push(path) } },
     './ProductImage': { ProductImage: 'ProductImage' }, './ActionButton': { ActionButton: 'ActionButton' },
     '../features/auth/AuthContext': { useAuth: () => ({ state: { status: signedIn ? 'signed-in' : 'signed-out' }, busy: false }) },
     '../features/cart/BagContext': { useBag: () => ({ signedIn, state: { status: 'ready', items: [] },
+      current: () => ({ status: 'ready', items: [] }),
       dispatch: async action => { actions.push(action); return true; } }) },
   });
   return { render: (details = true) => { host.begin(); return ProductCard({ product: initial, details }); }, actions, navigation };
